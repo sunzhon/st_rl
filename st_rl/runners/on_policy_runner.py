@@ -47,7 +47,6 @@ from st_rl.utils import store_code_state
 from torch.utils.tensorboard import SummaryWriter as TensorboardSummaryWriter
 
 
-
 class OnPolicyRunner:
 
     def __init__(self,
@@ -71,7 +70,6 @@ class OnPolicyRunner:
         else:
             self.policy_cfg["num_critic_obs"] = self.policy_cfg["num_obs"]
 
-        self.metrics = 0.0
         
         # get policy
         actor_critic = modules.build_actor_critic(
@@ -80,23 +78,21 @@ class OnPolicyRunner:
             self.policy_cfg,
         ).to(self.device)
 
-
-
         # get algorithm
         alg_class = getattr(algorithms, self.alg_cfg.pop("class_name"))  # PPO
         self.alg: algorithms.PPO = alg_class(actor_critic, device=self.device, **self.alg_cfg)
         
-        self.num_steps_per_env = self.cfg["num_steps_per_env"]
+        self.num_steps_per_env = self.cfg["num_steps_per_env"] # same variable with the num_transitions_per_env
         self.save_interval = self.cfg["save_interval"]
-
 
         # init storage and model
         self.alg.init_storage(
-            self.env.num_envs,
-            self.num_steps_per_env, 
-            [self.env.num_obs], 
-            [self.policy_cfg["num_critic_obs"]], 
-            [self.env.num_actions]
+            num_envs=self.env.num_envs,
+            num_transitions_per_env=self.num_steps_per_env, 
+            actor_obs_shape=(self.env.num_obs,), 
+            critic_obs_shape=(self.policy_cfg["num_critic_obs"],), 
+            action_shape=(self.env.num_actions,),
+            **self.cfg["storage"] if "storage" in self.cfg.keys() else {},
         )
         # init normalization
         self.alg.init_obs_norm(self.policy_cfg["num_obs"], self.policy_cfg["num_critic_obs"])
@@ -142,6 +138,10 @@ class OnPolicyRunner:
         obs, extras = self.env.get_observations()
         critic_obs = extras["observations"].get("critic", obs)
         obs, critic_obs = obs.to(self.device), critic_obs.to(self.device)
+        if "amp_policy" in extras["observations"]:
+            amp_obs = extras["observations"].get("amp_policy",obs)
+        else:
+            amp_obs=None
 
         # switch to training mode
         self.train_mode()  # switch to train mode (for dropout for example)
@@ -163,12 +163,14 @@ class OnPolicyRunner:
             #1) Rollout, inference_mode for data collection
             with torch.inference_mode(self.cfg.get("inference_mode_rollout", True)):
                 for i in range(self.num_steps_per_env):
-                    obs, critic_obs, rewards, dones, infos = self.rollout_step(obs, critic_obs)
-                    
+                    obs, critic_obs, rewards, dones, infos, amp_obs = self.rollout_step(obs, critic_obs, amp_obs)
                     if self.log_dir is not None:
                         # Book keeping
-                        if 'episode' in infos:
-                            ep_infos.append(infos['episode'])
+                        if "episode" in infos:
+                            ep_infos.append(infos["episode"])
+                        elif "log" in infos:
+                            ep_infos.append(infos["log"])
+
                         cur_reward_sum += rewards
                         cur_episode_length += 1
                         new_ids = (dones > 0).nonzero(as_tuple=False)
@@ -188,12 +190,13 @@ class OnPolicyRunner:
             #2) Training, compute loss and update algorithm after an episode
             losses, stats = self.alg.update(self.current_learning_iteration)
 
-            #3) eval
+            #3) Eval
             self.evaluation()
             if trial is not None:
-                trial.report(self.metrics, self.current_learning_iteration)
+                trial.report(self.metrics_velrmsd, self.current_learning_iteration)
+                trial.report(self.metrics_CoT, self.current_learning_iteration)
         
-            #4) logging
+            #4) Logging
             stop = time.time()
             learn_time = stop - start
             if self.log_dir is not None and self.current_learning_iteration % self.log_interval == 0:
@@ -219,24 +222,26 @@ class OnPolicyRunner:
 
 
     def evaluation(self):
-        self.metrics_velrmsd = 0.0 #lin_vel_rmsd(self.env, None, None).mean()
-        self.metrics_CoT = 0.0 #CoT(self.env,None,None).mean()
-        self.metrics = self.metrics_velrmsd
+        self.metrics_velrmsd = self.env.lin_vel_rmsd.mean()
+        self.metrics_CoT = self.env.CoT.mean()
 
-    def rollout_step(self, obs, critic_obs):
+    def rollout_step(self, obs, critic_obs, **kwargs):
         # get actions from policy
         actions = self.alg.act(obs, critic_obs)
         # step env
         obs, rewards, dones, infos = self.env.step(actions)
         obs, critic_obs, rewards, dones = obs.to(self.device), critic_obs.to(self.device), rewards.to(self.device), dones.to(self.device)
+        
+        # NOTE : terminal_amp_states, see amp for hardware
         # perform normalization
         obs = self.alg.obs_normalizer(obs)
         if "critic" in infos["observations"]:
             critic_obs = self.alg.critic_obs_normalizer(infos["observations"]["critic"])
         else:
             critic_obs = obs
+
         # process the step
-        self.alg.process_env_step(rewards, dones, infos, obs, critic_obs)
+        self.alg.process_env_step(rewards, dones, infos)
         return obs, critic_obs, rewards, dones, infos
 
     def log(self, locs, width=80, pad=35):
@@ -250,11 +255,15 @@ class OnPolicyRunner:
                 infotensor = torch.tensor([], device=self.device)
                 for ep_info in locs['ep_infos']:
                     # handle scalar and zero dimensional tensor infos
+                    if key not in ep_info:
+                        continue
                     if not isinstance(ep_info[key], torch.Tensor):
                         ep_info[key] = torch.Tensor([ep_info[key]])
                     if len(ep_info[key].shape) == 0:
                         ep_info[key] = ep_info[key].unsqueeze(0)
                     infotensor = torch.cat((infotensor, ep_info[key].to(self.device)))
+                value = torch.mean(infotensor)
+
                 if "_max" in key:
                     infotensor = infotensor[~infotensor.isnan()]
                     value = torch.max(infotensor) if len(infotensor) > 0 else torch.tensor(float("nan"))
@@ -263,8 +272,15 @@ class OnPolicyRunner:
                     value = torch.min(infotensor) if len(infotensor) > 0 else torch.tensor(float("nan"))
                 else:
                     value = torch.nanmean(infotensor)
-                self.writer.add_scalar('Episode/' + key, value, self.current_learning_iteration)
-                ep_string += f"""{f'Mean episode {key}:':>{pad}} {value:.4f}\n"""
+
+                # log to logger and terminal
+                if "/" in key:
+                    self.writer.add_scalar(key, value, locs["it"])
+                    ep_string += f"""{f'{key}:':>{pad}} {value:.4f}\n"""
+                else:
+                    self.writer.add_scalar("Episode/" + key, value, locs["it"])
+                    ep_string += f"""{f'Mean episode {key}:':>{pad}} {value:.4f}\n"""
+
         mean_std = self.alg.actor_critic.action_std.mean()
         fps = int(self.num_steps_per_env * self.env.num_envs / (locs['collection_time'] + locs['learn_time']))
 
@@ -285,7 +301,6 @@ class OnPolicyRunner:
 
         self.writer.add_scalar('Eval/mean_velrmsd', self.metrics_velrmsd, self.current_learning_iteration)
         self.writer.add_scalar('Eval/mean_CoT', self.metrics_CoT, self.current_learning_iteration)
-        self.writer.add_scalar('Eval/mean_metrics', self.metrics, self.current_learning_iteration)
 
         if len(locs['rewbuffer']) > 0:
             self.writer.add_scalar('Train/mean_reward', statistics.mean(locs['rewbuffer']), self.current_learning_iteration)
@@ -336,7 +351,6 @@ class OnPolicyRunner:
 
         log_string += (f"""{'Eval metrics vel rmsd/step:':>{pad}} {self.metrics_velrmsd:.4f}\n""")
         log_string += (f"""{'Eval metrics CoT/step:':>{pad}} {self.metrics_CoT:.4f}\n""")
-        log_string += (f"""{'Eval metrics/step:':>{pad}} {self.metrics:.4f}\n""")
 
         log_string += (f"""{'-' * width}\n"""
                        f"""{'Total timesteps:':>{pad}} {self.tot_timesteps}\n"""
@@ -384,7 +398,7 @@ class OnPolicyRunner:
         if device is not None:
             self.alg.actor_critic.to(device)
         policy = self.alg.actor_critic.act_inference
-        if self.alg.cfg.empirical_normalization:
+        if self.alg.empirical_normalization:
             if device is not None:
                 self.alg.obs_normalizer.to(device)
             policy = lambda x: self.alg.actor_critic.act_inference(self.alg.obs_normalizer(x))  # noqa: E731

@@ -71,3 +71,17 @@ class EmpiricalNormalization(nn.Module):
     @torch.jit.unused
     def inverse(self, y):
         return y * (self._std + self.eps) + self._mean
+
+
+
+
+
+
+class Normalize(torch.nn.Module):
+    def __init__(self):
+        super(Normalize, self).__init__()
+        self.normalize = torch.nn.functional.normalize
+
+    def forward(self, x):
+        x = self.normalize(x, dim=-1)
+        return x

@@ -1,4 +1,3 @@
-
 import numpy as np
 
 import torch
@@ -11,6 +10,7 @@ from st_rl.utils import unpad_trajectories
 from st_rl.utils.utils import get_subobs_size, get_subobs_by_components, substitute_estimated_state
 from st_rl.utils.collections import namedarraytuple
 
+# Define a named tuple for hidden states
 EstimatorActorHiddenState = namedarraytuple('EstimatorActorHiddenState', [
     'estimator',
     'actor',
@@ -35,16 +35,16 @@ class EstimatorMixin:
         self.estimator_kwargs = estimator_kwargs
         self.use_actor_rnn = use_actor_rnn
         self.replace_state_prob = replace_state_prob
-        assert (self.replace_state_prob <= 0.) or (not self.use_actor_rnn), "You cannot replace the actor's observation (part) after the actor already used it's memory module. "
+        assert (self.replace_state_prob <= 0.) or (not self.use_actor_rnn), "You cannot replace the actor's observation (part) after the actor already used its memory module."
         self.build_estimator(**kwargs)
         print(f"Estimator: {self.state_estimator}")
 
     def build_estimator(self, **kwargs):
-        """ This implementation is not flexible enough, but it is enough for now. """
+        """Build the state estimator model."""
         estimator_input_size = get_subobs_size(self.obs_segments, self.estimator_obs_components)
         estimator_output_size = get_subobs_size(self.obs_segments, self.estimator_target_components)
         if self.is_recurrent:
-            # estimate required state using a recurrent network
+            # Estimate required state using a recurrent network
             if self.use_actor_rnn:
                 estimator_input_size = self.memory_a.rnn.hidden_size
                 self.state_estimator = MlpModel(
@@ -65,7 +65,7 @@ class EstimatorMixin:
                     **self.estimator_kwargs,
                 )
         else:
-            # estimate required state using a feedforward network
+            # Estimate required state using a feedforward network
             self.state_estimator = MlpModel(
                 input_size= estimator_input_size,
                 output_size= estimator_output_size,
@@ -73,22 +73,21 @@ class EstimatorMixin:
             )
     
     def reset(self, dones=None):
+        """Reset the estimator."""
         super().reset(dones)
         if self.is_recurrent and not self.use_actor_rnn:
             self.memory_s.reset(dones)
 
     def act(self, observations, masks=None, hidden_states=None, inference= False):
+        """Perform an action based on the observations."""
         observations = observations.clone()
         if inference:
-            assert masks is None and hidden_states is None, "Inference mode does not support masks and hidden_states. "
+            assert masks is None and hidden_states is None, "Inference mode does not support masks and hidden_states."
         if self.is_recurrent and self.use_actor_rnn:
-            # NOTE:
-            # In this branch, it may requires a redesign for the entire actor_critic.act interface.
             input_s = self.memory_a(observations, masks, hidden_states)
             action = ActorCritic.act(self, input_s)
             self.estimated_state_ = self.state_estimator(input_s)
         elif self.is_recurrent and not self.use_actor_rnn:
-            # TODO: allows non-recurrent state estimator with recurrent actor
             subobs = get_subobs_by_components(
                 observations,
                 component_names= self.estimator_obs_components,
@@ -99,9 +98,6 @@ class EstimatorMixin:
                 None, # use None to prevent unpadding
                 hidden_states if hidden_states is None else hidden_states.estimator,
             )
-            # QUESTION: after memory_s, the estimated_state is already unpadded. How to get
-            # the padded format and feed it into actor's observation?
-            # SOLUTION: modify the code of Memory module, use masks= None to stop the unpadding.
             self.estimated_state_ = self.state_estimator(input_s)
             use_estimated_state_mask = torch.rand_like(observations[..., 0]) < self.replace_state_prob
             observations[use_estimated_state_mask] = substitute_estimated_state(
@@ -119,7 +115,6 @@ class EstimatorMixin:
                     hidden_states= hidden_states if hidden_states is None else hidden_states.actor,
                 )
         else:
-            # both state estimator and actor are feedforward (non-recurrent)
             subobs = get_subobs_by_components(
                 observations,
                 component_names= self.estimator_obs_components,
@@ -140,17 +135,15 @@ class EstimatorMixin:
         return action
     
     def act_inference(self, observations):
+        """Perform an action in inference mode."""
         return self.act(observations, inference= True)
     
-    """ No modification required for evaluate() """
-
     def get_estimated_state(self):
-        """ In order to maintain the same interface of ActorCritic(Recurrent),
-        the user must call this function after calling act() to get the estimated state.
-        """
+        """Get the estimated state after calling act()."""
         return self.estimated_state_
     
     def get_hidden_states(self):
+        """Get the hidden states."""
         return_ = super().get_hidden_states()
         if self.is_recurrent and not self.use_actor_rnn:
             return_ = return_._replace(actor= EstimatorActorHiddenState(
@@ -160,7 +153,9 @@ class EstimatorMixin:
         return return_
     
 class StateAc(EstimatorMixin, ActorCritic):
+    """State Actor-Critic class."""
     pass
 
 class StateAcRecurrent(EstimatorMixin, ActorCriticRecurrent):
+    """State Actor-Critic Recurrent class."""
     pass

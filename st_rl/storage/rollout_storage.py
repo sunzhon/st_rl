@@ -67,22 +67,22 @@ class RolloutStorage:
         "masks",
     ])
 
-    def __init__(self, num_envs, num_transitions_per_env, obs_shape, privileged_obs_shape, actions_shape, device='cpu'):
+    def __init__(self, num_envs, num_transitions_per_env, actor_obs_shape, critic_obs_shape, action_shape, device='cuda:0',**kwargs):
 
         self.device = device
 
-        self.obs_shape = obs_shape
-        self.privileged_obs_shape = privileged_obs_shape
-        self.actions_shape = actions_shape
+        self.obs_shape = actor_obs_shape
+        self.privileged_obs_shape = critic_obs_shape
+        self.action_shape = action_shape
 
         # Core
-        self.observations = torch.zeros(num_transitions_per_env, num_envs, *obs_shape, device=self.device)
-        if privileged_obs_shape[0] is not None:
-            self.privileged_observations = torch.zeros(num_transitions_per_env, num_envs, *privileged_obs_shape, device=self.device)
+        self.observations = torch.zeros(num_transitions_per_env, num_envs, *actor_obs_shape, device=self.device)
+        if critic_obs_shape[0] is not None:
+            self.privileged_observations = torch.zeros(num_transitions_per_env, num_envs, *critic_obs_shape, device=self.device)
         else:
             self.privileged_observations = None
         self.rewards = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
-        self.actions = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=self.device)
+        self.actions = torch.zeros(num_transitions_per_env, num_envs, *action_shape, device=self.device)
         self.dones = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device).byte()
 
         # For PPO
@@ -90,8 +90,8 @@ class RolloutStorage:
         self.values = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
         self.returns = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
         self.advantages = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
-        self.mu = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=self.device)
-        self.sigma = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=self.device)
+        self.mu = torch.zeros(num_transitions_per_env, num_envs, *action_shape, device=self.device)
+        self.sigma = torch.zeros(num_transitions_per_env, num_envs, *action_shape, device=self.device)
 
         self.num_transitions_per_env = num_transitions_per_env
         self.num_envs = num_envs
@@ -311,7 +311,7 @@ class QueueRolloutStorage(RolloutStorage):
         # Core
         self.observations = torch.cat([
             self.observations,
-            torch.zeros(expand_size, self.num_envs, *self.obs_shape, device=self.device),
+            torch.zeros(expand_size, self.num_envs, *self.actor_obs_shape, device=self.device),
         ], dim= 0).contiguous()
         if self.privileged_obs_shape[0] is not None:
             self.privileged_observations = torch.cat([
@@ -324,7 +324,7 @@ class QueueRolloutStorage(RolloutStorage):
         ], dim= 0).contiguous()
         self.actions = torch.cat([
             self.actions,
-            torch.zeros(expand_size, self.num_envs, *self.actions_shape, device=self.device),
+            torch.zeros(expand_size, self.num_envs, *self.action_shape, device=self.device),
         ], dim= 0).contiguous()
         self.dones = torch.cat([
             self.dones,
@@ -350,11 +350,11 @@ class QueueRolloutStorage(RolloutStorage):
         ], dim= 0).contiguous()
         self.mu = torch.cat([
             self.mu,
-            torch.zeros(expand_size, self.num_envs, *self.actions_shape, device=self.device),
+            torch.zeros(expand_size, self.num_envs, *self.action_shape, device=self.device),
         ], dim= 0).contiguous()
         self.sigma = torch.cat([
             self.sigma,
-            torch.zeros(expand_size, self.num_envs, *self.actions_shape, device=self.device),
+            torch.zeros(expand_size, self.num_envs, *self.action_shape, device=self.device),
         ], dim= 0).contiguous()
 
         # For hidden_states
@@ -435,7 +435,7 @@ class ActionLabelRollout(QueueRolloutStorage):
         expand_size = super().expand_buffer_once()
         self.action_labels = torch.cat([
             self.action_labels,
-            torch.zeros(expand_size, self.num_envs, *self.actions_shape, device=self.device),
+            torch.zeros(expand_size, self.num_envs, *self.action_shape, device=self.device),
         ], dim= 0).contiguous()
         return expand_size
 
@@ -529,3 +529,64 @@ class SarsaRolloutStorage(RolloutStorage):
             next_obs_batch,
             next_critic_obs_batch,
         )
+
+
+
+
+
+class AmpRolloutStorage(ActionLabelRollout):
+        
+    class Transition(ActionLabelRollout.Transition):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.amp_policy = None
+            self.amp_expert = None
+    
+    MiniBatch = namedtuple("MiniBatch", [
+        *ActionLabelRollout.MiniBatch._fields,
+        "amp_policy",
+        "amp_expert",
+    ])
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.amp_obs_shape = kwargs["amp_obs_shape"]
+        self.amp_policy = torch.zeros(self.num_transitions_per_env, self.num_envs, *self.amp_obs_shape, device=self.device)
+        self.amp_expert = torch.zeros(self.num_transitions_per_env, self.num_envs, *self.amp_obs_shape, device=self.device)
+
+    def expand_buffer_once(self):
+        expand_size = super().expand_buffer_once()
+
+        self.amp_policy = torch.cat([
+            self.amp_policy,
+            torch.zeros(expand_size, self.num_envs, *self.amp_obs_shape, device=self.device),
+        ], dim= 0).contiguous()
+
+        self.amp_expert = torch.cat([
+            self.amp_expert,
+            torch.zeros(expand_size, self.num_envs, *self.amp_obs_shape, device=self.device),
+        ], dim= 0).contiguous()
+        return expand_size
+
+    def add_transitions(self, transition: Transition):
+        self.amp_policy[self.step] = transition.amp_policy
+        self.amp_expert[self.step] = transition.amp_expert
+        return super().add_transitions(transition)
+
+    def untie_buffer_loop(self):
+        self.amp_policy = self.swap_from_cursor(self.amp_policy)
+        self.amp_expert = self.swap_from_cursor(self.amp_expert)
+        return super().untie_buffer_loop()
+    
+    def get_minibatch_from_indices(self, T_slice, B_slice, padded_B_slice=None, prev_done_mask=None):
+        minibatch = super().get_minibatch_from_indices(T_slice, B_slice, padded_B_slice, prev_done_mask)
+        amp_policy_batch = self.amp_policy[T_slice, B_slice]
+        amp_expert_batch = self.amp_expert[T_slice, B_slice]
+        
+        #import pdb;pdb.set_trace()
+        #if padded_B_slice is None:
+        #    amp_policy_batch = amp_policy_batch.flatten(0, 1)
+        #    amp_expert_batch = amp_expert_batch.flatten(0, 1)
+
+        
+        return AmpRolloutStorage.MiniBatch(*minibatch, amp_policy_batch, amp_expert_batch)

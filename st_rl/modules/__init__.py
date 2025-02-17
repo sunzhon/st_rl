@@ -29,6 +29,7 @@
 # Copyright (c) 2021 ETH Zurich, Nikita Rudin
 
 from .actor_critic import ActorCritic
+from .amp_discriminator import AmpActorCritic, AmpActorCriticRecurrent
 from .actor_critic_recurrent import ActorCriticRecurrent
 from .visual_actor_critic import VisualDeterministicRecurrent, VisualDeterministicAC
 from .actor_critic_mutex import ActorCriticMutex
@@ -37,7 +38,7 @@ from .encoder_actor_critic import EncoderActorCriticMixin, EncoderActorCritic, E
 from .state_estimator import EstimatorMixin, StateAc, StateAcRecurrent
 from .all_mixer import EncoderStateAc, EncoderStateAcRecurrent
 
-from .normalizer import EmpiricalNormalization
+from .normalizer import EmpiricalNormalization, Normalize
 
 
 def build_actor_critic(env, policy_class_name, policy_cfg):

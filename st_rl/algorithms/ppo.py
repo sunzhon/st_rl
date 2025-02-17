@@ -34,7 +34,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 from st_rl.modules import ActorCritic
-from rsl_rl.modules import EmpiricalNormalization
+from st_rl.modules import EmpiricalNormalization
 from st_rl.storage import RolloutStorage
 
 class PPO:
@@ -57,6 +57,8 @@ class PPO:
                  desired_kl=0.01,
                  device='cpu',
                  empirical_normalization=False,
+                 *args,
+                 **kwargs
                  ):
 
         self.device = device
@@ -99,9 +101,10 @@ class PPO:
             self.obs_normalizer = torch.nn.Identity().to(self.device)  # no normalization
             self.critic_obs_normalizer = torch.nn.Identity().to(self.device)  # no normalization
 
-    def init_storage(self, num_envs, num_transitions_per_env, actor_obs_shape, critic_obs_shape, action_shape):
+    def init_storage(self, num_envs, num_transitions_per_env, actor_obs_shape, critic_obs_shape, action_shape, **kwargs):
         self.transition = RolloutStorage.Transition()
-        self.storage = RolloutStorage(num_envs, num_transitions_per_env, actor_obs_shape, critic_obs_shape, action_shape, self.device)
+        self.storage = RolloutStorage(num_envs, num_transitions_per_env, actor_obs_shape, critic_obs_shape, action_shape, self.device, **kwargs)
+        
 
     def test_mode(self):
         self.actor_critic.test()
@@ -121,9 +124,10 @@ class PPO:
         # need to record obs and critic_obs before env.step()
         self.transition.observations = obs
         self.transition.critic_observations = critic_obs
+
         return self.transition.actions
     
-    def process_env_step(self, rewards, dones, infos, next_obs, next_critic_obs):
+    def process_env_step(self, rewards, dones, infos):
         self.transition.rewards = rewards.clone()
         self.transition.dones = dones
         # Bootstrapping on time outs

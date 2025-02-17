@@ -73,7 +73,6 @@ class TPPO(PPO):
         self.lr_scheduler_kwargs = lr_scheduler
         self.hidden_state_resample_prob = hidden_state_resample_prob
         self.action_labels_from_sample = action_labels_from_sample
-        self.transition = ActionLabelRollout.Transition()
 
         # build and load teacher network
         teacher_actor_critic = getattr(modules, teacher_policy_class_name)(**teacher_policy)
@@ -95,6 +94,7 @@ class TPPO(PPO):
             )
 
     def init_storage(self, *args, **kwargs):
+        self.transition = ActionLabelRollout.Transition()
         self.storage = ActionLabelRollout(
             *args,
             **kwargs,
@@ -104,7 +104,7 @@ class TPPO(PPO):
 
     def act(self, obs, critic_obs):
         # get actions
-        return_ = super().act(obs, critic_obs)
+        return_ = super().act(obs, critic_obs) # return is transition.actions
         
         # get action labels from teacher actor
         if self.label_action_with_critic_obs and self.action_labels_from_sample:
@@ -123,8 +123,8 @@ class TPPO(PPO):
 
         return return_
     
-    def process_env_step(self, rewards, dones, infos, next_obs, next_critic_obs):
-        return_ = super().process_env_step(rewards, dones, infos, next_obs, next_critic_obs)
+    def process_env_step(self, rewards, dones, infos):
+        return_ = super().process_env_step(rewards, dones, infos)
         self.teacher_actor_critic.reset(dones)
         # resample teacher action mask for those dones env
         self.use_teacher_act_mask[dones] = torch.rand(dones.sum(), device= self.device) < self.teacher_act_prob(self.current_learning_iteration)
@@ -134,7 +134,7 @@ class TPPO(PPO):
         """ The interface to collect transition from dataset rather than env """
         super().act(transition.observation, transition.privileged_observation)
         self.transition.action_labels = transition.action
-        super().process_env_step(transition.reward, transition.done, infos, transition.next_observation, transition.next_privileged_observation)
+        super().process_env_step(transition.reward, transition.done, infos)
 
     def compute_returns(self, last_critic_obs):
         if not self.using_ppo:
@@ -243,6 +243,23 @@ class TPPO(PPO):
         # update distillation loss coef if applicable
         self.distillation_loss_coef = self.distillation_loss_coef_func(self.current_learning_iteration) if hasattr(self, "distillation_loss_coef_func") else self.__distillation_loss_coef
         losses["distillation_loss"] = dist_loss.mean()
+
+        # Discriminator loss.
+        if self.amp_loss is not None and hasattr(self.actor_critic, "discriminator"):
+            policy_state, policy_next_state = minibatch.sample_amp_policy
+            expert_state, expert_next_state = minibatch.sample_amp_expert
+            with torch.no_grad():
+                policy_state = self.actor_critic.amp_normalizer.normalize_torch(policy_state, self.device)
+                policy_next_state = self.amp_normalizer.normalize_torch(policy_next_state, self.device)
+                expert_state = self.amp_normalizer.normalize_torch(expert_state, self.device)
+                expert_next_state = self.amp_normalizer.normalize_torch(expert_next_state, self.device)
+                policy_d = self.actor_critic.discriminator(torch.cat([policy_state, policy_next_state], dim=-1))
+                expert_d = self.actor_critic.discriminator(torch.cat([expert_state, expert_next_state], dim=-1))
+                expert_loss = torch.nn.MSELoss()(expert_d, torch.ones(expert_d.size(), device=self.device))
+                policy_loss = torch.nn.MSELoss()(policy_d, -1 * torch.ones(policy_d.size(), device=self.device))
+                amp_loss = 0.5 * (expert_loss + policy_loss)
+                grad_pen_loss = self.actor_critic.discriminator.compute_grad_pen(*sample_amp_expert, lambda_=10)
+                losses["amp_loss"] = amp_loss + grad_pen_loss  
 
         # distill loss of embedding latent
         if self.distill_latent_obs_component_mapping is not None:
