@@ -36,7 +36,7 @@ class APPOAlgoMixin:
 
         # The shape of normaliz is the same as the observation space of the policy
         # AMP data loader (adversarial motion prior)
-        amp_data_cfg = kwargs.get("amp_data_cfg", {})
+        amp_data_cfg = kwargs.get("amp_data", {})
         self.amp_data = AMPLoader(**amp_data_cfg)
         
         #self.amp_normalizer = Normalize(shape=*self.storage.obs_shape, device=self.device)

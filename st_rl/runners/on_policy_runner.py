@@ -107,8 +107,9 @@ class OnPolicyRunner:
         self.git_status_repos = [st_rl.__file__]
 
         _, _ = self.env.reset()
-    
-    def learn(self, num_learning_iterations, init_at_random_ep_len=False, trial=None):
+
+
+    def init_writter(self, init_at_random_ep_len):
         # initialize writer
         if self.log_dir is not None and self.writer is None:
             # Launch either Tensorboard or Neptune & Tensorboard summary writer(s), default: Tensorboard.
@@ -133,6 +134,13 @@ class OnPolicyRunner:
         # episode setting
         if init_at_random_ep_len:
             self.env.episode_length_buf = torch.randint_like(self.env.episode_length_buf, high=int(self.env.max_episode_length))
+
+
+    
+    def learn(self, num_learning_iterations, init_at_random_ep_len=False, trial=None):
+
+        # init writer
+        self.init_writter(init_at_random_ep_len)
 
         # get observations
         obs, extras = self.env.get_observations()
@@ -216,7 +224,6 @@ class OnPolicyRunner:
                     for path in git_file_paths:
                         self.writer.save_file(path)
 
-
         #5) saving training models
         self.save(os.path.join(self.log_dir, 'model_{}.pt'.format(self.current_learning_iteration)))
 
@@ -225,7 +232,7 @@ class OnPolicyRunner:
         self.metrics_velrmsd = self.env.lin_vel_rmsd.mean()
         self.metrics_CoT = self.env.CoT.mean()
 
-    def rollout_step(self, obs, critic_obs, **kwargs):
+    def rollout_step(self, obs, critic_obs, amp_obs, **kwargs):
         # get actions from policy
         actions = self.alg.act(obs, critic_obs)
         # step env
@@ -242,7 +249,7 @@ class OnPolicyRunner:
 
         # process the step
         self.alg.process_env_step(rewards, dones, infos)
-        return obs, critic_obs, rewards, dones, infos
+        return obs, critic_obs, rewards, dones, infos, amp_obs
 
     def log(self, locs, width=80, pad=35):
         self.tot_timesteps += self.num_steps_per_env * self.env.num_envs

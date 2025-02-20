@@ -98,6 +98,7 @@ class AMPDiscriminator(nn.Module):
                 next_state = normalizer.normalize_torch(next_state, self.device)
             
             d = self.amp_linear(self.trunk(torch.cat([state, next_state], dim=-1)))
+            # if the amp_obs of policy was discrimated as that from expert obs, then should get high rewards
             reward = self.amp_reward_coef * torch.clamp(1 - (1/4) * torch.square(d - 1), min=0)
             if self.task_reward_lerp > 0:
                 reward = self._lerp_reward(reward, task_reward.unsqueeze(-1))
@@ -158,13 +159,13 @@ class AmpMixin:
                          **kwargs,
                         )
 
-        train_cfg = kwargs.get('amp_discriminator_cfg', {})
+        cfg = kwargs.get('amp_discriminator', {})
         self.discriminator = AMPDiscriminator(
-            train_cfg['amp_input_dim'],
-            train_cfg['amp_reward_coef'],
-            train_cfg['amp_discr_hidden_dims'],
-            train_cfg['amp_task_reward_lerp'],
-            train_cfg['device'],
+            cfg['input_dim'],
+            cfg['reward_coef'],
+            cfg['hidden_dims'],
+            cfg['task_reward_lerp'],
+            cfg['device'],
             )
         
         print(f"Discriminator: {self.discriminator}")

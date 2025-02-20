@@ -46,6 +46,9 @@ class AMPLoader:
     def __init__(self, time_between_frames, data_dir='', 
                  preload_transitions=False, num_preload_transitions=1000000,
                  motion_files=glob.glob(os.getenv("HOME")+"/workspace/kepler_ws/KeplerRobot/datasets/motion_files/*"),
+                 field_names=None,
+                 field_group=None,
+                 switch_quaternion=False,
                  device="cuda:0", **kwargs):
         """
         Initialize the AMPLoader.
@@ -59,7 +62,14 @@ class AMPLoader:
             device: Device to run the model on (e.g., 'cpu' or 'cuda').
         """
         self.device = device
-        self.time_between_frames = time_between_frames
+        self.time_between_frames = time_between_frames # the duration between two cohenrent frames
+        self.switch_quaternion=switch_quaternion
+
+        self.field_names = field_names
+        self.field_group = field_group
+        if self.field_group is None:
+            self.field_group = ['root_pos', 'root_rot', 'root_vel', 'root_ang_vel', 'dof_pos']
+        
         
         # Values to store for each trajectory.
         self.trajectories = []
@@ -68,8 +78,11 @@ class AMPLoader:
         self.trajectory_idxs = []
         self.trajectory_lens = []  # Traj length in seconds.
         self.trajectory_weights = []
-        self.trajectory_frame_durations = []
+        self.trajectory_frame_durations = [] # the duration of a frame
         self.trajectory_num_frames = []
+
+        self.clock=0.0 # a clock count from 0 to 1.
+        self.dt=0.001
 
         # Load motion data from files
         for i, motion_file in enumerate(motion_files):
@@ -78,6 +91,14 @@ class AMPLoader:
                 motion_json = json.load(f)
                 motion_data = np.array(motion_json["Frames"])
                 #motion_data = self.reorder_from_pybullet_to_isaac(motion_data)
+                self.trajectory_fields = motion_json["Fields"]
+                print(f"[Dataset Info] Loaded trajectory fields: {self.trajectory_fields}")
+
+                if self.field_names is not None:
+                    assert(set(field_names)==set(self.trajectory_fields)), "The arguments field_names of Amploader should have same elements with the dataset fields in {motion_file}"
+                    reorder_field_index = [self.trajectory_fields.index(key) for key in field_names]
+                    motion_data = motion_data[:,reorder_field_index]
+                    print(f"[Dataset Info] Re-ordered trajectory fields: {field_names}")
 
                 # Normalize and standardize quaternions.
                 for f_i in range(motion_data.shape[0]):
@@ -85,24 +106,23 @@ class AMPLoader:
                     root_rot = QuaternionNormalize(root_rot) # unit(normalize) quaternion (x,y,z,w), to make norm to be 1
                     root_rot = motion_util.standardize_quaternion(root_rot) # standlize quaternion, make w > 0
                     motion_data[f_i, AMPLoader.ROOT_ROT_START_IDX : AMPLoader.ROOT_ROT_END_IDX] = root_rot
+
                 
                 # select fields from motion data to make trajectory
                 self.trajectories.append(torch.tensor(
                     motion_data[:, AMPLoader.ROOT_POS_START_IDX:AMPLoader.JOINT_VEL_END_IDX],
                     dtype=torch.float32, device=device))
 
-                # NOTE, this is for test, please remove this after get right data
-                #self.trajectories.append(torch.randn(100,69),device=device)
-
                 self.trajectories_full.append(torch.tensor(
                     motion_data[:, :AMPLoader.JOINT_VEL_END_IDX],
                     dtype=torch.float32, device=device))
+
                 self.trajectory_idxs.append(i)
                 self.trajectory_weights.append(float(motion_json["MotionWeight"]))
                 frame_duration = float(motion_json["FrameDuration"])
                 self.trajectory_frame_durations.append(frame_duration)
                 traj_len = (motion_data.shape[0] - 1) * frame_duration
-                self.trajectory_lens.append(traj_len)
+                self.trajectory_lens.append(traj_len) # it is time [s], frame len* duration
                 self.trajectory_num_frames.append(float(motion_data.shape[0]))
 
             print(f"Loaded {traj_len}s. motion from {motion_file}.")
@@ -123,11 +143,11 @@ class AMPLoader:
             self.preloaded_s_next = self.get_full_frame_at_time_batch(traj_idxs, times + self.time_between_frames)
             print(f'Finished preloading')
 
-        self.all_trajectories_full = torch.vstack(self.trajectories_full)
+        all_trajectories_full = torch.vstack(self.trajectories_full)
 
         print(f"A trajectory shape with selected fields: {self.trajectories[0].shape}")
         print(f"A trajectory shape with all fields: {self.trajectories_full[0].shape}")
-        print(f"All trajectories shape with all fields: {self.all_trajectories_full.shape}")
+        print(f"All trajectories shape with all fields: {all_trajectories_full.shape}")
 
     def reorder_from_pybullet_to_isaac(self, motion_data):
         """
@@ -172,7 +192,7 @@ class AMPLoader:
 
     def traj_time_sample(self, traj_idx):
         """Sample random time for traj."""
-        subst = self.time_between_frames + self.trajectory_frame_durations[traj_idx]
+        subst = self.time_between_frames + self.trajectory_frame_durations[traj_idx] # frame period
         return max(0, (self.trajectory_lens[traj_idx] * np.random.uniform() - subst))
 
     def traj_time_sample_batch(self, traj_idxs):
@@ -191,13 +211,14 @@ class AMPLoader:
 
     def get_frame_at_time(self, traj_idx, time):
         """Returns frame for the given trajectory at the specified time."""
-        p = float(time) / self.trajectory_lens[traj_idx]
-        n = self.trajectories[traj_idx].shape[0]
+        p = float(time) / self.trajectory_lens[traj_idx] # percentage of the time on the trajectory
+        n = self.trajectories[traj_idx].shape[0] # number of traj_idx trajectory
         idx_low, idx_high = int(np.floor(p * n)), int(np.ceil(p * n))
         frame_start = self.trajectories[traj_idx][idx_low]
         frame_end = self.trajectories[traj_idx][idx_high]
         blend = p * n - idx_low
         return self.slerp(frame_start, frame_end, blend)
+        #return self.blend_frame_pose(frame_start, frame_end, blend)
 
     def get_frame_at_time_batch(self, traj_idxs, times):
         """Returns frame for the given trajectory at the specified time."""
@@ -212,7 +233,8 @@ class AMPLoader:
             all_frame_starts[traj_mask] = trajectory[idx_low[traj_mask]]
             all_frame_ends[traj_mask] = trajectory[idx_high[traj_mask]]
         blend = torch.tensor(p * n - idx_low, device=self.device, dtype=torch.float32).unsqueeze(-1)
-        return self.slerp(all_frame_starts, all_frame_ends, blend)
+        #return self.slerp(all_frame_starts, all_frame_ends, blend)
+        return self.blend_frame_pose(all_frame_starts, all_frame_ends, blend)
 
     def get_full_frame_at_time(self, traj_idx, time):
         """Returns full frame for the given trajectory at the specified time."""
@@ -284,26 +306,40 @@ class AMPLoader:
 
         Returns:
             An interpolation of the two frames.
+
+
+        There are examples:
+            root_pos0, root_pos1 = AMPLoader.get_root_pos(frame0), AMPLoader.get_root_pos(frame1)
+            root_rot0, root_rot1 = AMPLoader.get_root_rot(frame0), AMPLoader.get_root_rot(frame1)
+            joints0, joints1 = AMPLoader.get_joint_pose(frame0), AMPLoader.get_joint_pose(frame1)
+            tar_toe_pos_0, tar_toe_pos_1 = AMPLoader.get_tar_toe_pos_local(frame0), AMPLoader.get_tar_toe_pos_local(frame1)
+            linear_vel_0, linear_vel_1 = AMPLoader.get_linear_vel(frame0), AMPLoader.get_linear_vel(frame1)
+            angular_vel_0, angular_vel_1 = AMPLoader.get_angular_vel(frame0), AMPLoader.get_angular_vel(frame1)
+            joint_vel_0, joint_vel_1 = AMPLoader.get_joint_vel(frame0), AMPLoader.get_joint_vel(frame1)
+
+            blend_root_pos = self.slerp(root_pos0, root_pos1, blend)
+            blend_root_rot = transformations.quaternion_slerp(root_rot0.cpu().numpy(), root_rot1.cpu().numpy(), blend)
+            blend_root_rot = torch.tensor(motion_util.standardize_quaternion(blend_root_rot), dtype=torch.float32, device=self.device)
+            blend_joints = self.slerp(joints0, joints1, blend)
+            blend_tar_toe_pos = self.slerp(tar_toe_pos_0, tar_toe_pos_1, blend)
+            blend_linear_vel = self.slerp(linear_vel_0, linear_vel_1, blend)
+            blend_angular_vel = self.slerp(angular_vel_0, angular_vel_1, blend)
+            blend_joints_vel = self.slerp(joint_vel_0, joint_vel_1, blend)
+
         """
-        root_pos0, root_pos1 = AMPLoader.get_root_pos(frame0), AMPLoader.get_root_pos(frame1)
-        root_rot0, root_rot1 = AMPLoader.get_root_rot(frame0), AMPLoader.get_root_rot(frame1)
-        joints0, joints1 = AMPLoader.get_joint_pose(frame0), AMPLoader.get_joint_pose(frame1)
-        tar_toe_pos_0, tar_toe_pos_1 = AMPLoader.get_tar_toe_pos_local(frame0), AMPLoader.get_tar_toe_pos_local(frame1)
-        linear_vel_0, linear_vel_1 = AMPLoader.get_linear_vel(frame0), AMPLoader.get_linear_vel(frame1)
-        angular_vel_0, angular_vel_1 = AMPLoader.get_angular_vel(frame0), AMPLoader.get_angular_vel(frame1)
-        joint_vel_0, joint_vel_1 = AMPLoader.get_joint_vel(frame0), AMPLoader.get_joint_vel(frame1)
+        blend_data =[]
+        for fg in self.field_group:
+            #fd0, fd1 = AMPLoader.get_root_pos(frame0), AMPLoader.get_root_pos(frame1)
+            fd0, fd1 = getattr(AMPLoader,"get_"+fg)(frame0), getattr(AMPLoader,"get_"+fg)(frame1)
 
-        blend_root_pos = self.slerp(root_pos0, root_pos1, blend)
-        blend_root_rot = transformations.quaternion_slerp(root_rot0.cpu().numpy(), root_rot1.cpu().numpy(), blend)
-        blend_root_rot = torch.tensor(motion_util.standardize_quaternion(blend_root_rot), dtype=torch.float32, device=self.device)
-        blend_joints = self.slerp(joints0, joints1, blend)
-        blend_tar_toe_pos = self.slerp(tar_toe_pos_0, tar_toe_pos_1, blend)
-        blend_linear_vel = self.slerp(linear_vel_0, linear_vel_1, blend)
-        blend_angular_vel = self.slerp(angular_vel_0, angular_vel_1, blend)
-        blend_joints_vel = self.slerp(joint_vel_0, joint_vel_1, blend)
-
-        return torch.cat([blend_root_pos, blend_root_rot, blend_joints, blend_tar_toe_pos, blend_linear_vel, blend_angular_vel, blend_joints_vel])
-
+            if fg != "root_rot":
+                blend_fd = self.slerp(fd0, fd1, blend)
+            else:
+                blend_fd = transformations.quaternion_slerp(fd0.cpu().numpy(), fd1.cpu().numpy(), blend)
+                blend_fd = torch.tensor(motion_util.standardize_quaternion(blend_fd), dtype=torch.float32, device=self.device)
+            blend_data.append(blend_fd)
+        return torch.cat(blend_data)
+            
     def feed_forward_generator(self, num_mini_batch, mini_batch_size):
         """Generates a batch of AMP transitions."""
         for _ in range(num_mini_batch):
@@ -333,14 +369,42 @@ class AMPLoader:
         traj_idxs = self.weighted_traj_idx_sample_batch(num_envs)
         times = self.traj_time_sample_batch(traj_idxs)
         for traj_idx, frame_time in zip(traj_idxs, times):
-            s.append(self.get_frame_at_time(traj_idx, frame_time))
-            s_next.append(self.get_frame_at_time(traj_idx, frame_time + self.time_between_frames))
+            s.append(self.sw_quat(self.get_frame_at_time(traj_idx, frame_time)))
+            s_next.append(self.sw_quat(self.get_frame_at_time(traj_idx, frame_time + self.time_between_frames)))
+
+        s = torch.vstack(s)
+        s_next = torch.vstack(s_next)
+        return torch.cat((s, s_next),dim=-1)
+
+    def get_expert_obs(self, num_envs):
+        """Generates a sequence frame at specify time"""
+        s, s_next = [], []
+        traj_idxs = self.weighted_traj_idx_sample_batch(num_envs)
+        times = self.traj_time_sample_batch(traj_idxs)
+
+        for traj_idx, frame_time in zip(traj_idxs, times):
+
+            subst = self.time_between_frames + self.trajectory_frame_durations[traj_idx] # frame period
+            frame_time = max(0, self.clock * self.trajectory_lens[traj_idx])- subst
+
+            s.append(self.sw_quat(self.get_frame_at_time(traj_idx, frame_time)))
+            s_next.append(self.sw_quat(self.get_frame_at_time(traj_idx, frame_time + self.time_between_frames)))
+
+        self.clock+=self.dt
+        self.clock%=1
 
         s = torch.vstack(s)
         s_next = torch.vstack(s_next)
         return torch.cat((s, s_next),dim=-1)
 
 
+    def sw_quat(self, frame_data):
+        # switch root-rot quaternion from xyzw to wxyz
+        if self.switch_quaternion:
+            root_rot = AMPLoader.get_root_rot(frame_data)
+            root_rot = np.hstack([root_rot[-1],root_rot[:3]])
+            frame_data[f_i, AMPLoader.ROOT_ROT_START_IDX : AMPLoader.ROOT_ROT_END_IDX] = root_rot
+        return frame_data
 
     @property
     def observation_dim(self):
@@ -363,17 +427,35 @@ class AMPLoader:
     def get_root_rot_batch(poses):
         return poses[:, AMPLoader.ROOT_ROT_START_IDX:AMPLoader.ROOT_ROT_END_IDX]
 
-    def get_joint_pose(pose):
+    def get_root_vel(pose):
+        return pose[AMPLoader.ROOT_LIN_VEL_START_IDX:AMPLoader.ROOT_LIN_VEL_END_IDX]
+
+    def get_root_vel_batch(pose):
+        return pose[:,AMPLoader.ROOT_LIN_VEL_START_IDX:AMPLoader.ROOT_LIN_VEL_END_IDX]
+
+    def get_root_ang_vel(pose):
+        return pose[AMPLoader.ROOT_ANG_VEL_START_IDX:AMPLoader.ROOT_ANG_VEL_END_IDX]
+
+    def get_root_ang_vel_batch(pose):
+        return pose[:,AMPLoader.ROOT_ANG_VEL_START_IDX:AMPLoader.ROOT_ANG_VEL_END_IDX]
+
+    def get_dof_pos(pose):
         return pose[AMPLoader.JOINT_POS_START_IDX:AMPLoader.JOINT_POS_END_IDX]
 
-    def get_joint_pose_batch(poses):
+    def get_dof_pos_batch(poses):
         return poses[:, AMPLoader.JOINT_POS_START_IDX:AMPLoader.JOINT_POS_END_IDX]
 
-    def get_joint_vel(pose):
+    def get_dof_vel(pose):
         return pose[AMPLoader.JOINT_VEL_START_IDX:AMPLoader.JOINT_VEL_END_IDX]
 
-    def get_joint_vel_batch(poses):
+    def get_dof_vel_batch(poses):
         return poses[:, AMPLoader.JOINT_VEL_START_IDX:AMPLoader.JOINT_VEL_END_IDX]  
+
+
+
+
+
+
 
 
 

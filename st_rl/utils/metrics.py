@@ -9,17 +9,17 @@ The following example shows how to wrap an environment for RSL-RL:
 
 .. code-block:: python
 
-    from omni.isaac.lab_tasks.utils.wrappers.rsl_rl import RslRlVecEnvWrapper
+    from isaaclab_tasks.utils.wrappers.rsl_rl import RslRlVecEnvWrapper
 
     env = RslRlVecEnvWrapper(env)
 
 """
 
 import torch
-from omni.isaac.lab_tasks.utils.wrappers.rsl_rl import RslRlVecEnvWrapper
-from omni.isaac.lab.managers import SceneEntityCfg
-from omni.isaac.lab.utils.math import quat_rotate_inverse, yaw_quat
-from omni.isaac.lab.utils.math import euler_xyz_from_quat as get_euler_xyz
+from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
+from isaaclab.managers import SceneEntityCfg
+from isaaclab.utils.math import quat_rotate_inverse, yaw_quat
+from isaaclab.utils.math import euler_xyz_from_quat as get_euler_xyz
 
 from .logger import Logger
 
