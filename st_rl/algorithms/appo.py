@@ -38,6 +38,7 @@ class APPOAlgoMixin:
         # AMP data loader (adversarial motion prior)
         amp_data_cfg = kwargs.get("amp_data", {})
         self.amp_data = AMPLoader(**amp_data_cfg)
+        #self.expert_obs_generator = self.amp_data.expert_obs_generator(24,3000)
         
         #self.amp_normalizer = Normalize(shape=*self.storage.obs_shape, device=self.device)
         self.amp_normalizer = Normalize()
@@ -62,11 +63,10 @@ class APPOAlgoMixin:
 
 
     def process_env_step(self, rewards, dones, infos, amp_obs, next_amp_obs):
+        # get amp policy data 
         self.transition.amp_policy = torch.cat((amp_obs.clone(), next_amp_obs.clone()),dim=-1)
-        # get amp data (policy and expert)
-        if hasattr(self.actor_critic, "discriminator"):
-            num_envs = amp_obs.shape[0]
-            self.transition.amp_expert = self.amp_data.sample_expert_obs(num_envs)
+        # get amp expert data 
+        self.transition.amp_expert = self.expert_obs_generator.__next__()
 
         return_ = super().process_env_step(rewards, dones, infos)
 

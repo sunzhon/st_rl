@@ -104,7 +104,8 @@ class OnPolicyRunner:
         self.tot_time = 0
         self.current_learning_iteration = 0
         self.log_interval = self.cfg.get("log_interval", 1)
-        self.git_status_repos = [st_rl.__file__]
+        self.git_status_repos = [os.path.dirname(os.path.dirname(st_rl.__file__))]
+        print(f"DEGUG: st_rl.__file__")
 
         _, _ = self.env.reset()
 

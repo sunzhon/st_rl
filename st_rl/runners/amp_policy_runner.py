@@ -74,8 +74,106 @@ class AmpPolicyRunner(OnPolicyRunner):
             next_amp_obs = next_amp_obs.to(self.device)
             amp_obs = amp_obs.to(self.device)
             rewards = self.alg.actor_critic.discriminator.predict_amp_reward(amp_obs, next_amp_obs, rewards)
+
         # process the step
         self.alg.process_env_step(rewards, dones, infos, amp_obs, next_amp_obs)
         amp_obs = torch.clone(next_amp_obs)
         return obs, critic_obs, rewards, dones, infos, amp_obs
+
+
+
+    def learn(self, num_learning_iterations, init_at_random_ep_len=False, trial=None):
+
+        # init writer
+        self.init_writter(init_at_random_ep_len)
+
+        # get observations
+        obs, extras = self.env.get_observations()
+        critic_obs = extras["observations"].get("critic", obs)
+        obs, critic_obs = obs.to(self.device), critic_obs.to(self.device)
+        if "amp_policy" in extras["observations"]:
+            amp_obs = extras["observations"].get("amp_policy",obs)
+        else:
+            amp_obs=None
+
+        # switch to training mode
+        self.train_mode()  # switch to train mode (for dropout for example)
+
+        ep_infos = []
+        rframebuffer = deque(maxlen=2000)
+        rewbuffer = deque(maxlen=100)
+        lenbuffer = deque(maxlen=100)
+        cur_reward_sum = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
+        cur_episode_length = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
+
+        print("Initialization done, start learning.")
+        print("NOTE: you may see a bunch of `NaN or Inf found in input tensor` once and appears in the log. Just ignore it if it does not affect the performance.")
+        start_iter = self.current_learning_iteration
+        tot_iter = self.current_learning_iteration + num_learning_iterations
+        tot_start_time = time.time()
+        start = time.time()
+        for it in range(start_iter, tot_iter):
+            #1) Rollout, inference_mode for data collection
+            with torch.inference_mode(self.cfg.get("inference_mode_rollout", True)):
+                # make an expert obs generator
+                self.alg.expert_obs_generator = self.alg.amp_data.expert_obs_generator(self.num_steps_per_env,self.env.num_envs)
+                # data collection
+                for i in range(self.num_steps_per_env):
+                    obs, critic_obs, rewards, dones, infos, amp_obs = self.rollout_step(obs, critic_obs, amp_obs)
+                    if self.log_dir is not None:
+                        # Book keeping
+                        if "episode" in infos:
+                            ep_infos.append(infos["episode"])
+                        elif "log" in infos:
+                            ep_infos.append(infos["log"])
+
+                        cur_reward_sum += rewards
+                        cur_episode_length += 1
+                        new_ids = (dones > 0).nonzero(as_tuple=False)
+                        rframebuffer.extend(rewards[dones < 1].cpu().numpy().tolist())
+                        rewbuffer.extend(cur_reward_sum[new_ids][:, 0].cpu().numpy().tolist())
+                        lenbuffer.extend(cur_episode_length[new_ids][:, 0].cpu().numpy().tolist())
+                        cur_reward_sum[new_ids] = 0
+                        cur_episode_length[new_ids] = 0
+
+                stop = time.time()
+                collection_time = stop - start
+
+                # Learning step
+                start = stop
+                self.alg.compute_returns(critic_obs)
+
+            #2) Training, compute loss and update algorithm after an episode
+            losses, stats = self.alg.update(self.current_learning_iteration)
+
+            #3) Eval
+            self.evaluation()
+            if trial is not None:
+                trial.report(self.metrics_velrmsd, self.current_learning_iteration)
+                trial.report(self.metrics_CoT, self.current_learning_iteration)
+        
+            #4) Logging
+            stop = time.time()
+            learn_time = stop - start
+            if self.log_dir is not None and self.current_learning_iteration % self.log_interval == 0:
+                self.log(locals())
+            if self.current_learning_iteration % self.save_interval == 0 and self.current_learning_iteration > start_iter:
+                self.save(os.path.join(self.log_dir, 'model_{}.pt'.format(self.current_learning_iteration)))
+            ep_infos.clear()
+            self.current_learning_iteration = self.current_learning_iteration + 1
+            start = time.time()
+
+            # store code diff
+            if it == start_iter:
+                # obtain all the diff files
+                git_file_paths = store_code_state(self.log_dir, self.git_status_repos)
+                # if possible store them to wandb
+                if self.logger_type in ["wandb", "neptune"] and git_file_paths:
+                    for path in git_file_paths:
+                        self.writer.save_file(path)
+
+        #5) saving training models
+        self.save(os.path.join(self.log_dir, 'model_{}.pt'.format(self.current_learning_iteration)))
+
+
 
