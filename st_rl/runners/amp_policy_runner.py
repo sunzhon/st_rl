@@ -116,7 +116,7 @@ class AmpPolicyRunner(OnPolicyRunner):
             #1) Rollout, inference_mode for data collection
             with torch.inference_mode(self.cfg.get("inference_mode_rollout", True)):
                 # make an expert obs generator
-                self.alg.expert_obs_generator = self.alg.amp_data.expert_obs_generator(self.num_steps_per_env,self.env.num_envs)
+                self.alg.expert_obs_generator = self.alg.amp_data.expert_obs_generator(self.num_steps_per_env, self.env.num_envs)
                 # data collection
                 for i in range(self.num_steps_per_env):
                     obs, critic_obs, rewards, dones, infos, amp_obs = self.rollout_step(obs, critic_obs, amp_obs)
@@ -135,7 +135,7 @@ class AmpPolicyRunner(OnPolicyRunner):
                         lenbuffer.extend(cur_episode_length[new_ids][:, 0].cpu().numpy().tolist())
                         cur_reward_sum[new_ids] = 0
                         cur_episode_length[new_ids] = 0
-
+                
                 stop = time.time()
                 collection_time = stop - start
 
@@ -174,6 +174,8 @@ class AmpPolicyRunner(OnPolicyRunner):
 
         #5) saving training models
         self.save(os.path.join(self.log_dir, 'model_{}.pt'.format(self.current_learning_iteration)))
+
+        return self.metrics_velrmsd, self.metrics_CoT
 
 
 

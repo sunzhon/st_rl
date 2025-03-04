@@ -451,8 +451,8 @@ class ActionLabelRollout(QueueRolloutStorage):
         minibatch = super().get_minibatch_from_indices(T_slice, B_slice, padded_B_slice, prev_done_mask)
         action_label_batch = self.action_labels[T_slice, B_slice]
 
-        if padded_B_slice is None:
-            action_label_batch = action_label_batch.flatten(0, 1)
+        #if padded_B_slice is None:
+        #    action_label_batch = action_label_batch.flatten(0, 1)
         
         return ActionLabelRollout.MiniBatch(*minibatch, action_label_batch)
             

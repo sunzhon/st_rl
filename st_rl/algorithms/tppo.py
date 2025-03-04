@@ -244,23 +244,6 @@ class TPPO(PPO):
         self.distillation_loss_coef = self.distillation_loss_coef_func(self.current_learning_iteration) if hasattr(self, "distillation_loss_coef_func") else self.__distillation_loss_coef
         losses["distillation_loss"] = dist_loss.mean()
 
-        # Discriminator loss.
-        if self.amp_loss is not None and hasattr(self.actor_critic, "discriminator"):
-            policy_state, policy_next_state = minibatch.sample_amp_policy
-            expert_state, expert_next_state = minibatch.sample_amp_expert
-            with torch.no_grad():
-                policy_state = self.actor_critic.amp_normalizer.normalize_torch(policy_state, self.device)
-                policy_next_state = self.amp_normalizer.normalize_torch(policy_next_state, self.device)
-                expert_state = self.amp_normalizer.normalize_torch(expert_state, self.device)
-                expert_next_state = self.amp_normalizer.normalize_torch(expert_next_state, self.device)
-                policy_d = self.actor_critic.discriminator(torch.cat([policy_state, policy_next_state], dim=-1))
-                expert_d = self.actor_critic.discriminator(torch.cat([expert_state, expert_next_state], dim=-1))
-                expert_loss = torch.nn.MSELoss()(expert_d, torch.ones(expert_d.size(), device=self.device))
-                policy_loss = torch.nn.MSELoss()(policy_d, -1 * torch.ones(policy_d.size(), device=self.device))
-                amp_loss = 0.5 * (expert_loss + policy_loss)
-                grad_pen_loss = self.actor_critic.discriminator.compute_grad_pen(*sample_amp_expert, lambda_=10)
-                losses["amp_loss"] = amp_loss + grad_pen_loss  
-
         # distill loss of embedding latent
         if self.distill_latent_obs_component_mapping is not None:
             for k, v in self.distill_latent_obs_component_mapping.items():

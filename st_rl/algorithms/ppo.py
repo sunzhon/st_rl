@@ -208,7 +208,6 @@ class PPO:
                 for param_group in self.optimizer.param_groups:
                     param_group['lr'] = self.learning_rate
 
-
         # Surrogate loss
         ratio = torch.exp(actions_log_prob_batch - torch.squeeze(minibatch.old_actions_log_prob))
         surrogate = -torch.squeeze(minibatch.advantages) * ratio

@@ -11,21 +11,29 @@ from st_rl.storage.rollout_storage import ActionLabelRollout, AmpRolloutStorage
 from st_rl.algorithms.ppo import PPO
 from st_rl.datasets.motion_loader import AMPLoader
 from st_rl.modules.normalizer import Normalize
+from st_rl.modules.normalizer import Normalizer
+
 
 # assuming learning iteration is at an assumable iteration scale
 def GET_PROB_FUNC(option, iteration_scale):
     PROB_options = {
         "linear": (lambda x: max(0, 1 - 1 / iteration_scale * x)),
         "exp": (lambda x: max(0, (1 - 1 / iteration_scale) ** x)),
-        "tanh": (lambda x: max(0, 0.5 * (1 - torch.tanh(1 / iteration_scale * (x - iteration_scale))))),
+        "tanh": (
+            lambda x: max(
+                0, 0.5 * (1 - torch.tanh(1 / iteration_scale * (x - iteration_scale)))
+            )
+        ),
     }
     return PROB_options[option]
 
+
 class APPOAlgoMixin:
-    def __init__(self,
-            *args,
-            **kwargs,
-        ):
+    def __init__(
+        self,
+        *args,
+        **kwargs,
+    ):
         """
         Args:
         - distill_latent_obs_component_mapping: a dict of
@@ -34,14 +42,19 @@ class APPOAlgoMixin:
         """
         super().__init__(*args, **kwargs)
 
-        # The shape of normaliz is the same as the observation space of the policy
+        # The shape of the normalizer is the same as the observation space
+        # of the policy
         # AMP data loader (adversarial motion prior)
         amp_data_cfg = kwargs.get("amp_data", {})
         self.amp_data = AMPLoader(**amp_data_cfg)
-        #self.expert_obs_generator = self.amp_data.expert_obs_generator(24,3000)
-        
-        #self.amp_normalizer = Normalize(shape=*self.storage.obs_shape, device=self.device)
-        self.amp_normalizer = Normalize()
+
+        if "mimic_loss_coef" in amp_data_cfg.keys():
+            self.mimic_loss_coef = amp_data_cfg["mimic_loss_coef"]
+        if "amp_loss_coef" in amp_data_cfg.keys():
+            self.amp_loss_coef = amp_data_cfg["amp_loss_coef"]
+
+        # Initialize the AMP normalizer with the observation shape and device
+        self.amp_normalizer = Normalizer(amp_data_cfg["amp_obs_dim"])
 
     def init_storage(self, *args, **kwargs):
         self.transition = AmpRolloutStorage.Transition()
@@ -50,49 +63,85 @@ class APPOAlgoMixin:
             **kwargs,
         )
 
-
     def act(self, obs, critic_obs):
         # get actions
-        return_ = super().act(obs, critic_obs) # return is transition.actions
-        
-        #NOTE: fill action labels with actor actions
-        self.transition.action_labels = return_
+        return_ = super().act(obs, critic_obs)  # return is transition.actions
+
+        # fill action labels with actor actions
+        if not hasattr(self, "mimic_loss_coef"):
+            self.transition.action_labels = return_
 
         return return_
 
-
-
     def process_env_step(self, rewards, dones, infos, amp_obs, next_amp_obs):
-        # get amp policy data 
-        self.transition.amp_policy = torch.cat((amp_obs.clone(), next_amp_obs.clone()),dim=-1)
-        # get amp expert data 
+        # get amp policy data
+        self.transition.amp_policy = torch.cat(
+            (amp_obs.clone(), next_amp_obs.clone()), dim=-1
+        )
+
+        # get amp expert data
         self.transition.amp_expert = self.expert_obs_generator.__next__()
+
+        if hasattr(self, "mimic_loss_coef"):
+            dof_num = 19
+            self.transition.action_labels = (
+                1.2 * self.transition.amp_expert[:, 13 : 13 + dof_num]
+            )
 
         return_ = super().process_env_step(rewards, dones, infos)
 
         return return_
 
-    
     def compute_losses(self, minibatch):
         losses, inter_vars, stats = super().compute_losses(minibatch)
+
+        if hasattr(self, "mimic_loss_coef"):
+            mimic_loss = torch.norm(
+                self.actor_critic.action_mean - minibatch.action_labels, dim=-1
+            ).mean()
+            losses["mimic_loss"] = mimic_loss
 
         # Discriminator loss.
         if hasattr(self.actor_critic, "discriminator"):
             policy_state = minibatch.amp_policy
             expert_state = minibatch.amp_expert
             with torch.no_grad():
-                policy_state = self.amp_normalizer(policy_state)
-                expert_state = self.amp_normalizer(expert_state)
+                #import pdb; pdb.set_trace()
+                policy_state = self.amp_normalizer.normalize_torch(
+                    policy_state, self.device
+                )
+                expert_state = self.amp_normalizer.normalize_torch(
+                    expert_state, self.device
+                )
             policy_d = self.actor_critic.discriminator(policy_state)
             expert_d = self.actor_critic.discriminator(expert_state)
-            expert_loss = torch.nn.MSELoss()(expert_d, torch.ones(expert_d.size(), device=self.device))
-            policy_loss = torch.nn.MSELoss()(policy_d, -1 * torch.ones(policy_d.size(), device=self.device))
+            expert_loss = torch.nn.MSELoss()(
+                expert_d, torch.ones(expert_d.size(), device=self.device)
+            )
+            policy_loss = torch.nn.MSELoss()(
+                policy_d, -1 * torch.ones(policy_d.size(), device=self.device)
+            )
             amp_loss = 0.5 * (expert_loss + policy_loss)
-            grad_pen_loss = self.actor_critic.discriminator.compute_grad_pen(expert_state, lambda_=10)
-            losses["amp_loss"] = amp_loss + grad_pen_loss  
+            grad_pen_loss = self.actor_critic.discriminator.compute_grad_pen(
+                expert_state, lambda_=10
+            )
+            losses["amp_loss"] = amp_loss + grad_pen_loss
+
+        if self.amp_normalizer is not None:
+            self.amp_normalizer.update(policy_state.detach().cpu().numpy())
+            self.amp_normalizer.update(expert_state.detach().cpu().numpy())
 
         return losses, inter_vars, stats
 
 
 class APPO(APPOAlgoMixin, PPO):
+    """
+    APPO (Adversarial Proximal Policy Optimization) class that combines 
+    the functionalities of APPOAlgoMixin and PPO. This class is used for 
+    training policies with adversarial motion priors.
+    
+    Inherits:
+        APPOAlgoMixin: Mixin class providing adversarial training methods.
+        PPO: Proximal Policy Optimization algorithm class.
+    """
     pass

@@ -82,8 +82,8 @@ class AMPLoader:
         self.trajectory_frame_durations = [] # the duration of a frame
         self.trajectory_num_frames = []
 
-        self.clock=0.0 # a clock count from 0 to 1.
-        self.dt=0.001
+        # self.clock=0.0 # a clock count from 0 to 1.
+        # self.dt=0.001
 
         # Load motion data from files
         for i, motion_file in enumerate(motion_files):
@@ -118,7 +118,7 @@ class AMPLoader:
                 self.trajectory_lens.append(traj_len) # it is time [s], frame len* duration
                 self.trajectory_num_frames.append(float(motion_data.shape[0]))
 
-            print(f"Loaded {traj_len}s. motion from {motion_file}.")
+                print(f"Loaded {traj_len} s motion from {motion_file}.")
         
         # Normalize trajectory weights
         self.trajectory_weights = np.array(self.trajectory_weights) / np.sum(self.trajectory_weights)
@@ -129,15 +129,19 @@ class AMPLoader:
         # Preload transitions if specified
         print(f'Preloading {self.num_transition} transitions')
         traj_idxs = self.weighted_traj_idx_sample_batch(size=int(max(1, self.num_transition//min(self.trajectory_num_frames)))) 
-        s,s_next=[],[]
+        self.preloaded_s, self.preloaded_s_next = [], []
         for traj_idx in traj_idxs:
             times = self.traj_time_sample_batch(traj_idx, size= max(self.trajectory_num_frames))
+            s,s_next=[],[]
             for frame_time in times:
                 s.append(self.sw_quat(self.get_frame_at_time(traj_idx, frame_time)))
                 s_next.append(self.sw_quat(self.get_frame_at_time(traj_idx, frame_time + self.time_between_frames)))
+            self.preloaded_s.append(torch.vstack(s))
+            self.preloaded_s_next.append(torch.vstack(s_next))
 
-        self.preloaded_s = torch.vstack(s)
-        self.preloaded_s_next = torch.vstack(s_next)
+        self.preloaded_s = torch.stack(self.preloaded_s, dim=0)
+        self.preloaded_s_next = torch.stack(self.preloaded_s_next, dim=0)
+
         print(f'Finished preloading')
 
 
@@ -358,40 +362,15 @@ class AMPLoader:
 
     def expert_obs_generator(self, num_iterations, iteration_size):
         """Generates a batch of AMP transitions."""
-        loop=0
-        for _ in range(num_iterations):
-            s, s_next = [], []
-            if self.shuffle:
-                traj_idxs = np.random.choice(self.preloaded_s.shape[0], size=iteration_size) # sample random sequence of frame
-            else:
-                traj_idxs = iteration_size*loop+np.arange(iteration_size)
-                loop+=1
-                loop%=int(self.num_transition/iteration_size)
-            s = self.preloaded_s[traj_idxs,:] # differet trajectories and frame times
-            s_next = self.preloaded_s_next[traj_idxs,:]
+        if self.shuffle:
+            traj_idxs = np.random.choice(self.preloaded_s.shape[0], size=iteration_size) # sample random sequence of frame
+        else:
+            traj_idxs = np.arange(iteration_size) % self.preloaded_s.shape[0]
+        
+        for frame_idx in range(num_iterations):
+            s = self.preloaded_s[traj_idxs, frame_idx, :] # differet trajectories and frame times
+            s_next = self.preloaded_s_next[traj_idxs, frame_idx, :]
             yield torch.cat((s, s_next),dim=-1)
-
-
-    def get_sequence_obs(self, num_envs):
-        """Generates a sequence frame at specify time"""
-        s, s_next = [], []
-        traj_idxs = self.weighted_traj_idx_sample_batch(num_envs)
-        times = self.traj_time_sample_batch(traj_idxs)
-
-        for traj_idx, frame_time in zip(traj_idxs, times):
-
-            subst = self.time_between_frames + self.trajectory_frame_durations[traj_idx] # frame period
-            frame_time = max(0, self.clock * self.trajectory_lens[traj_idx])- subst
-
-            s.append(self.sw_quat(self.get_frame_at_time(traj_idx, frame_time)))
-            s_next.append(self.sw_quat(self.get_frame_at_time(traj_idx, frame_time + self.time_between_frames)))
-
-        self.clock+=self.dt
-        self.clock%=1
-
-        s = torch.vstack(s)
-        s_next = torch.vstack(s_next)
-        return torch.cat((s, s_next),dim=-1)
 
 
     def sw_quat(self, frame_data):

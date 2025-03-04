@@ -228,6 +228,7 @@ class OnPolicyRunner:
         #5) saving training models
         self.save(os.path.join(self.log_dir, 'model_{}.pt'.format(self.current_learning_iteration)))
 
+        return self.metrics_velrmsd, self.metrics_CoT
 
     def evaluation(self):
         self.metrics_velrmsd = self.env.lin_vel_rmsd.mean()
