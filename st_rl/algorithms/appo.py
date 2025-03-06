@@ -50,6 +50,7 @@ class APPOAlgoMixin:
 
         if "mimic_loss_coef" in amp_data_cfg.keys():
             self.mimic_loss_coef = amp_data_cfg["mimic_loss_coef"]
+            print(f"mimic loss: {self.mimic_loss_coef}")
         if "amp_loss_coef" in amp_data_cfg.keys():
             self.amp_loss_coef = amp_data_cfg["amp_loss_coef"]
 
@@ -68,8 +69,7 @@ class APPOAlgoMixin:
         return_ = super().act(obs, critic_obs)  # return is transition.actions
 
         # fill action labels with actor actions
-        if not hasattr(self, "mimic_loss_coef"):
-            self.transition.action_labels = return_
+        self.transition.action_labels = return_
 
         return return_
 
@@ -81,13 +81,6 @@ class APPOAlgoMixin:
 
         # get amp expert data
         self.transition.amp_expert = self.expert_obs_generator.__next__()
-
-        if hasattr(self, "mimic_loss_coef"):
-            dof_num = 19
-            self.transition.action_labels = (
-                1.2 * self.transition.amp_expert[:, 13 : 13 + dof_num]
-            )
-
         return_ = super().process_env_step(rewards, dones, infos)
 
         return return_
@@ -95,9 +88,18 @@ class APPOAlgoMixin:
     def compute_losses(self, minibatch):
         losses, inter_vars, stats = super().compute_losses(minibatch)
 
-        if hasattr(self, "mimic_loss_coef"):
-            mimic_loss = torch.norm(
+        if hasattr(self, "dagger_loss_coef"):
+            # this has problem
+            dagger_loss = torch.norm(
                 self.actor_critic.action_mean - minibatch.action_labels, dim=-1
+            ).mean()
+            losses["dagger_loss"] = dagger_loss
+
+        if hasattr(self, "mimic_loss_coef"):
+            policy_state = minibatch.amp_policy
+            expert_state = minibatch.amp_expert
+            mimic_loss = torch.norm(
+                policy_state - expert_state, dim=-1
             ).mean()
             losses["mimic_loss"] = mimic_loss
 

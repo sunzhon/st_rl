@@ -15,8 +15,7 @@ from st_rl.datasets.pose3d import QuaternionNormalize
 class AMPLoader:
     def __init__(
         self,
-        time_between_frames,
-        num_transition=10000,
+        time_between_frames, # the duration between two cohenrent frames (the frames of state and next_state)
         motion_files=glob.glob(
             os.getenv("HOME")
             + "/workspace/kepler_ws/KeplerRobot/datasets/motion_files/*"
@@ -26,6 +25,10 @@ class AMPLoader:
         switch_quaternion=True,
         shuffle=False,
         device="cuda:0",
+        frame_start=None,
+        frame_end=None,
+        augment_trajectory_num=100,
+        augment_frame_num=100,
         **kwargs,
     ):
         """
@@ -39,12 +42,12 @@ class AMPLoader:
             device: Device to run the model on (e.g., 'cpu' or 'cuda').
         """
         self.device = device
-        self.time_between_frames = (
-            time_between_frames  # the duration between two cohenrent frames
-        )
+        self.time_between_frames = time_between_frames  # the duration between two cohenrent frames
+        
         self.switch_quaternion = switch_quaternion
         self.shuffle = shuffle
-        self.num_transition = num_transition
+        self.augment_frame_num = augment_frame_num
+        self.augment_trajectory_num = augment_trajectory_num
 
         self.field_names = field_names
         self.root_rot_index = [
@@ -75,38 +78,25 @@ class AMPLoader:
                 print(
                     f"[Dataset Info] Loaded trajectory fields: {self.trajectory_fields}"
                 )
-
-                assert set(field_names) == set(self.trajectory_fields), f"The arguments field {self.field_names} should have same elements with the dataset fields {self.trajectory_fields} in {motion_file}"
+                assert set(field_names).issubset(set(self.trajectory_fields)), f"The arguments field {self.field_names} should have same elements with the dataset fields {self.trajectory_fields} in {motion_file}"
                 reorder_field_index = [self.trajectory_fields.index(key) for key in self.field_names]
-                motion_data = motion_data[:, reorder_field_index]
+                
+                if frame_start is None:
+                    frame_start = 0
+                if frame_end is None:
+                    frame_end = motion_data.shape[0]
+
+                motion_data = motion_data[frame_start:frame_end, reorder_field_index]
                 print(f"[Dataset Info] Re-ordered trajectory fields: {self.field_names}")
 
                 # Normalize and standardize quaternions.
                 for f_i in range(motion_data.shape[0]):
-                    root_rot = motion_data[
-                        f_i,
-                        [
-                            self.field_names.index("root_rot_" + key)
-                            for key in ["x", "y", "z", "w"]
-                        ],
-                    ]
-                    root_rot = QuaternionNormalize(
-                        root_rot
-                    )  # unit(normalize) quaternion (x,y,z,w), to make norm to be 1
-                    root_rot = motion_util.standardize_quaternion(
-                        root_rot
-                    )  # standlize quaternion, make w > 0
-                    motion_data[
-                        f_i,
-                        [
-                            self.field_names.index("root_rot_" + key)
-                            for key in ["x", "y", "z", "w"]
-                        ],
-                    ] = root_rot
+                    root_rot = motion_data[f_i,[self.field_names.index("root_rot_" + key) for key in ["x", "y", "z", "w"]]]
+                    root_rot = QuaternionNormalize(root_rot)  # unit(normalize) quaternion (x,y,z,w), to make norm to be 1
+                    root_rot = motion_util.standardize_quaternion(root_rot)  # standlize quaternion, make w > 0
+                    motion_data[f_i,[self.field_names.index("root_rot_" + key) for key in ["x", "y", "z", "w"]]] = root_rot
 
-                self.trajectories.append(
-                    torch.tensor(motion_data, dtype=torch.float32, device=device)
-                )
+                self.trajectories.append(torch.tensor(motion_data, dtype=torch.float32, device=device))
 
                 self.trajectory_idxs.append(i)
                 self.trajectory_weights.append(float(motion_json["MotionWeight"]))
@@ -129,26 +119,14 @@ class AMPLoader:
         self.trajectory_num_frames = np.array(self.trajectory_num_frames)
 
         # Preload transitions if specified
-        print(f"Preloading {self.num_transition} transitions")
-        divi = min(self.trajectory_num_frames)
-        traj_idxs = self.weighted_traj_idx_sample_batch(
-            size=int(max(1, self.num_transition // divi))
-        )
+        traj_idxs = self.weighted_traj_idx_sample_batch(size=augment_trajectory_num)
         self.preloaded_s, self.preloaded_s_next = [], []
         for traj_idx in traj_idxs:
-            times = self.traj_time_sample_batch(
-                traj_idx, size=max(self.trajectory_num_frames)
-            )
+            times = self.traj_time_sample_batch(traj_idx, size=augment_frame_num)
             s, s_next = [], []
             for frame_time in times:
                 s.append(self.sw_quat(self.get_frame_at_time(traj_idx, frame_time)))
-                s_next.append(
-                    self.sw_quat(
-                        self.get_frame_at_time(
-                            traj_idx, frame_time + self.time_between_frames
-                        )
-                    )
-                )
+                s_next.append(self.sw_quat(self.get_frame_at_time(traj_idx, frame_time + self.time_between_frames)))
             self.preloaded_s.append(torch.vstack(s))
             self.preloaded_s_next.append(torch.vstack(s_next))
 
@@ -228,25 +206,14 @@ class AMPLoader:
             )
             return repeated_array[:size]
 
-    # def traj_time_sample(self, traj_idx):
-    #     """Sample random time for traj."""
-    #     subst = self.time_between_frames + self.trajectory_frame_durations[traj_idx] # frame period
-    #     return max(0, (self.trajectory_lens[traj_idx] * np.random.uniform() - subst))
 
     def traj_time_sample_batch(self, traj_idx, size):
         """Sample random time for multiple trajectories."""
-        subst = (
-            self.time_between_frames + self.trajectory_frame_durations[traj_idx]
-        )  # frame period
+        subst = (self.time_between_frames + self.trajectory_frame_durations[traj_idx])  # frame period
         if self.shuffle:
-            time_samples = (
-                self.trajectory_lens[traj_idx] * np.random.uniform(size=int(size))
-                - subst
-            )
+            time_samples = (self.trajectory_lens[traj_idx] * np.random.uniform(size=int(size))- subst)
         else:
-            time_samples = (
-                self.trajectory_lens[traj_idx] * np.linspace(0, 1, int(size)) - subst
-            )
+            time_samples = (self.trajectory_lens[traj_idx] * np.linspace(0, 1, int(size)) - subst)
 
         return np.maximum(np.zeros_like(time_samples), time_samples)
 
@@ -260,9 +227,7 @@ class AMPLoader:
 
     def get_frame_at_time(self, traj_idx, time):
         """Returns frame for the given trajectory at the specified time."""
-        p = (
-            float(time) / self.trajectory_lens[traj_idx]
-        )  # percentage of the time on the trajectory
+        p = (float(time) / self.trajectory_lens[traj_idx])  # percentage of the time on the trajectory
         n = self.trajectories[traj_idx].shape[0]  # number of traj_idx trajectory
         idx_low, idx_high = int(np.floor(p * n)), int(np.ceil(p * n))
         frame_start = self.trajectories[traj_idx][idx_low]
@@ -305,72 +270,7 @@ class AMPLoader:
         blend = p * n - idx_low
         return self.blend_frame_pose(frame_start, frame_end, blend)
 
-    def get_full_frame_at_time_batch(self, traj_idxs, times):
-        """Returns full frame for the given trajectories at the specified times."""
-        p = times / self.trajectory_lens[traj_idxs]
-        n = self.trajectory_num_frames[traj_idxs]
-        idx_low, idx_high = np.floor(p * n).astype(np.int32), np.ceil(p * n).astype(
-            np.int32
-        )
-        all_frame_pos_starts = torch.zeros(
-            len(traj_idxs), AMPLoader.POS_SIZE, device=self.device
-        )
-        all_frame_pos_ends = torch.zeros(
-            len(traj_idxs), AMPLoader.POS_SIZE, device=self.device
-        )
-        all_frame_rot_starts = torch.zeros(
-            len(traj_idxs), AMPLoader.ROT_SIZE, device=self.device
-        )
-        all_frame_rot_ends = torch.zeros(
-            len(traj_idxs), AMPLoader.ROT_SIZE, device=self.device
-        )
-        all_frame_amp_starts = torch.zeros(
-            len(traj_idxs),
-            AMPLoader.JOINT_VEL_END_IDX - AMPLoader.JOINT_POSE_START_IDX,
-            device=self.device,
-        )
-        all_frame_amp_ends = torch.zeros(
-            len(traj_idxs),
-            AMPLoader.JOINT_VEL_END_IDX - AMPLoader.JOINT_POSE_START_IDX,
-            device=self.device,
-        )
-        for traj_idx in set(traj_idxs):
-            trajectory = self.trajectories_full[traj_idx]
-            traj_mask = traj_idxs == traj_idx
-            all_frame_pos_starts[traj_mask] = AMPLoader.get_root_pos_batch(
-                trajectory[idx_low[traj_mask]]
-            )
-            all_frame_pos_ends[traj_mask] = AMPLoader.get_root_pos_batch(
-                trajectory[idx_high[traj_mask]]
-            )
-            all_frame_rot_starts[traj_mask] = AMPLoader.get_root_rot_batch(
-                trajectory[idx_low[traj_mask]]
-            )
-            all_frame_rot_ends[traj_mask] = AMPLoader.get_root_rot_batch(
-                trajectory[idx_high[traj_mask]]
-            )
-            all_frame_amp_starts[traj_mask] = trajectory[idx_low[traj_mask]][
-                :, AMPLoader.JOINT_POSE_START_IDX : AMPLoader.JOINT_VEL_END_IDX
-            ]
-            all_frame_amp_ends[traj_mask] = trajectory[idx_high[traj_mask]][
-                :, AMPLoader.JOINT_POSE_START_IDX : AMPLoader.JOINT_VEL_END_IDX
-            ]
-        blend = torch.tensor(
-            p * n - idx_low, device=self.device, dtype=torch.float32
-        ).unsqueeze(-1)
 
-        pos_blend = self.slerp(all_frame_pos_starts, all_frame_pos_ends, blend)
-        rot_blend = utils.quaternion_slerp(
-            all_frame_rot_starts, all_frame_rot_ends, blend
-        )
-        amp_blend = self.slerp(all_frame_amp_starts, all_frame_amp_ends, blend)
-        return torch.cat([pos_blend, rot_blend, amp_blend], dim=-1)
-
-    def get_frame(self):
-        """Returns random frame."""
-        traj_idx = self.weighted_traj_idx_sample()
-        sampled_time = self.traj_time_sample(traj_idx)
-        return self.get_frame_at_time(traj_idx, sampled_time)
 
     def blend_frame_pose(self, frame0, frame1, blend):
         """
@@ -409,22 +309,19 @@ class AMPLoader:
             blend_fd[:, other_field_index] = other_blend_fd
 
             # blend_fd = torch.cat((other_blend_fd, rot_blend_fd), dim=-1, dtype=torch.float32, device=self.device)
-
         return blend_fd
 
     def expert_obs_generator(self, num_iterations, iteration_size):
         """Generates a batch of AMP transitions."""
+        assert iteration_size <= self.augment_trajectory_num, "The number of iterations should be less than the number of preloaded trajectories"
         if self.shuffle:
-            traj_idxs = np.random.choice(
-                self.preloaded_s.shape[0], size=iteration_size
-            )  # sample random sequence of frame
+            traj_idxs = np.random.choice(self.preloaded_s.shape[0], size=iteration_size)  # sample random sequence of frame
         else:
             traj_idxs = np.arange(iteration_size) % self.preloaded_s.shape[0]
 
+        assert num_iterations <= self.augment_frame_num, "The number of iterations should be less than the number of preloaded frames"
         for frame_idx in range(num_iterations):
-            s = self.preloaded_s[
-                traj_idxs, frame_idx, :
-            ]  # differet trajectories and frame times
+            s = self.preloaded_s[traj_idxs, frame_idx, :]  # differet trajectories and frame times
             s_next = self.preloaded_s_next[traj_idxs, frame_idx, :]
             yield torch.cat((s, s_next), dim=-1)
 
@@ -539,16 +436,17 @@ if __name__ == "__main__":
     amp_data_cfg = OrderedDict(
         time_between_frames=0.1,  # time between two frames
         shuffle=False,
-        num_transition=1000,
         motion_files=glob.glob(
             os.getenv("HOME")
             + "/workspace/kepler_ws/KeplerRobot/datasets/motion_files/saved_h1_data.txt"
         ),
         field_names=reordered_fields,
+        augment_trajectory_num=100,
+        augment_frame_num=10000,
         device="cuda:0",
     )
     amp_data = AMPLoader(**amp_data_cfg)
-    amp_expert_generator = amp_data.expert_obs_generator(1000, 1)
+    amp_expert_generator = amp_data.expert_obs_generator(100, 1)
     for _ in range(4):
         print(amp_expert_generator.__next__().shape)
         print(amp_expert_generator.__next__()[:13])

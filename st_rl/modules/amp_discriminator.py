@@ -10,14 +10,14 @@ from .actor_critic_recurrent import ActorCriticRecurrent, get_activation
 
 class AMPDiscriminator(nn.Module):
     def __init__(
-            self, input_dim, amp_reward_coef, hidden_layer_sizes, task_reward_lerp=0.0,device="cuda:0"):
+            self, input_dim, amp_reward_coef, hidden_dims, task_reward_lerp=0.0,device="cuda:0"):
         """
         Initialize the AMPDiscriminator.
 
         Args:
             input_dim: Dimension of the input.
             amp_reward_coef: Coefficient for AMP reward.
-            hidden_layer_sizes: List of sizes for hidden layers.
+            hidden_dims: List of sizes for hidden layers.
             device: Device to run the model on (e.g., 'cpu' or 'cuda').
             task_reward_lerp: Linear interpolation factor for task reward.
         """
@@ -32,12 +32,12 @@ class AMPDiscriminator(nn.Module):
         # Build the discriminator network
         amp_layers = []
         curr_in_dim = input_dim
-        for hidden_dim in hidden_layer_sizes:
+        for hidden_dim in hidden_dims:
             amp_layers.append(nn.Linear(curr_in_dim, hidden_dim))
             amp_layers.append(nn.ReLU())
             curr_in_dim = hidden_dim
         self.trunk = nn.Sequential(*amp_layers).to(device)
-        self.amp_linear = nn.Linear(hidden_layer_sizes[-1], 1).to(device)
+        self.amp_linear = nn.Linear(hidden_dims[-1], 1).to(device)
 
         self.trunk.train()
         self.amp_linear.train()
@@ -160,14 +160,7 @@ class AmpMixin:
                         )
 
         cfg = kwargs.get('amp_discriminator', {})
-        self.discriminator = AMPDiscriminator(
-            cfg['input_dim'],
-            cfg['reward_coef'],
-            cfg['hidden_dims'],
-            cfg['task_reward_lerp'],
-            cfg['device'],
-            )
-        
+        self.discriminator = AMPDiscriminator(**cfg)
         print(f"Discriminator: {self.discriminator}")
 
 class AmpActorCritic( AmpMixin, ActorCritic):
