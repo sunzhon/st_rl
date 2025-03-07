@@ -10,7 +10,7 @@ from .actor_critic_recurrent import ActorCriticRecurrent, get_activation
 
 class AMPDiscriminator(nn.Module):
     def __init__(
-            self, input_dim, amp_reward_coef, hidden_dims, task_reward_lerp=0.0,device="cuda:0"):
+            self, input_dim, amp_reward_coef, hidden_dims, task_reward_lerp=0.0, amp_grad_pen=5,device="cuda:0"):
         """
         Initialize the AMPDiscriminator.
 
