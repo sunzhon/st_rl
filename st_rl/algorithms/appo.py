@@ -124,9 +124,7 @@ class APPOAlgoMixin:
                 policy_d, -1 * torch.ones(policy_d.size(), device=self.device)
             )
             amp_loss = 0.5 * (expert_loss + policy_loss)
-            grad_pen_loss = self.actor_critic.discriminator.compute_grad_pen(
-                expert_state, lambda_=10
-            )
+            grad_pen_loss = self.actor_critic.discriminator.compute_grad_pen(expert_state)
             losses["amp_loss"] = amp_loss + grad_pen_loss
 
         if self.amp_normalizer is not None:

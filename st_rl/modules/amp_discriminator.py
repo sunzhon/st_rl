@@ -27,6 +27,7 @@ class AMPDiscriminator(nn.Module):
         self.input_dim = input_dim
 
         self.amp_reward_coef = amp_reward_coef
+        self.amp_grad_pen = amp_grad_pen
         self.task_reward_lerp = task_reward_lerp
 
         # Build the discriminator network
@@ -56,9 +57,7 @@ class AMPDiscriminator(nn.Module):
         d = self.amp_linear(h)
         return d
 
-    def compute_grad_pen(self,
-                         expert_data,
-                         lambda_=10):
+    def compute_grad_pen(self,amp_obs):
         """
         Compute the gradient penalty for the discriminator.
 
@@ -69,13 +68,14 @@ class AMPDiscriminator(nn.Module):
         Returns:
             Gradient penalty.
         """
+        expert_data = amp_obs.clone()
         expert_data.requires_grad = True
         disc = self.amp_linear(self.trunk(expert_data))
         ones = torch.ones(disc.size(), device=disc.device)
-        grad = autograd.grad(outputs=disc, inputs=expert_data, grad_outputs=ones, create_graph=True, retain_graph=True, only_inputs=True, allow_unused=True)[0]
+        grad = autograd.grad(outputs=disc, inputs=expert_data, grad_outputs=ones, create_graph=True, retain_graph=True, only_inputs=True)[0]
 
         # Enforce that the grad norm approaches 0.
-        grad_pen = lambda_ * (grad.norm(2, dim=1) - 0).pow(2).mean()
+        grad_pen = self.amp_grad_pen * (grad.norm(2, dim=1) - 0).pow(2).mean()
         return grad_pen
 
     def predict_amp_reward(self, state, next_state, task_reward, normalizer=None):
