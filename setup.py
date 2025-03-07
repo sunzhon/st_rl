@@ -17,9 +17,9 @@ setup(name='st_rl',
             "pandas==2.2.3",
             "termcolor==2.5.0",
             "pybullet==3.2.7",
-            "neptune>=1.13.0"
-            "neptune-optuna>=1.4.1"
-            "optuna==3.1.0"
+            "neptune>=1.13.0",
+            "neptune-optuna>=1.4.1",
+            "optuna==3.1.0",
             "optuna-dashboard>=0.17.0"
       ],
       )
