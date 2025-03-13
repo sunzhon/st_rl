@@ -89,47 +89,50 @@ class APPOAlgoMixin:
         losses, inter_vars, stats = super().compute_losses(minibatch)
 
         if hasattr(self, "dagger_loss_coef"):
-            # this has problem
-            dagger_loss = torch.norm(
-                self.actor_critic.action_mean - minibatch.action_labels, dim=-1
-            ).mean()
-            losses["dagger_loss"] = dagger_loss
+            if self.dagger_loss_coef != 0:
+                # this has problem
+                dagger_loss = torch.norm(
+                    self.actor_critic.action_mean - minibatch.action_labels, dim=-1
+                ).mean()
+                losses["dagger_loss"] = dagger_loss
 
         if hasattr(self, "mimic_loss_coef"):
-            policy_state = minibatch.amp_policy
-            expert_state = minibatch.amp_expert
-            mimic_loss = torch.norm(
-                policy_state - expert_state, dim=-1
-            ).mean()
-            losses["mimic_loss"] = mimic_loss
+            if self.mimic_loss_coef != 0:
+                policy_state = minibatch.amp_policy
+                expert_state = minibatch.amp_expert
+                mimic_loss = torch.norm(
+                    policy_state - expert_state, dim=-1
+                ).mean()
+                losses["mimic_loss"] = mimic_loss
 
         # Discriminator loss.
         if hasattr(self.actor_critic, "discriminator"):
-            policy_state = minibatch.amp_policy
-            expert_state = minibatch.amp_expert
-            with torch.no_grad():
-                #import pdb; pdb.set_trace()
-                policy_state = self.amp_normalizer.normalize_torch(
-                    policy_state, self.device
+            if self.amp_loss_coef != 0:
+                policy_state = minibatch.amp_policy
+                expert_state = minibatch.amp_expert
+                with torch.no_grad():
+                    #import pdb; pdb.set_trace()
+                    policy_state = self.amp_normalizer.normalize_torch(
+                        policy_state, self.device
+                    )
+                    expert_state = self.amp_normalizer.normalize_torch(
+                        expert_state, self.device
+                    )
+                policy_d = self.actor_critic.discriminator(policy_state)
+                expert_d = self.actor_critic.discriminator(expert_state)
+                expert_loss = torch.nn.MSELoss()(
+                    expert_d, torch.ones(expert_d.size(), device=self.device)
                 )
-                expert_state = self.amp_normalizer.normalize_torch(
-                    expert_state, self.device
+                policy_loss = torch.nn.MSELoss()(
+                    policy_d, -1 * torch.ones(policy_d.size(), device=self.device)
                 )
-            policy_d = self.actor_critic.discriminator(policy_state)
-            expert_d = self.actor_critic.discriminator(expert_state)
-            expert_loss = torch.nn.MSELoss()(
-                expert_d, torch.ones(expert_d.size(), device=self.device)
-            )
-            policy_loss = torch.nn.MSELoss()(
-                policy_d, -1 * torch.ones(policy_d.size(), device=self.device)
-            )
-            amp_loss = 0.5 * (expert_loss + policy_loss)
-            grad_pen_loss = self.actor_critic.discriminator.compute_grad_pen(expert_state)
-            losses["amp_loss"] = amp_loss + grad_pen_loss
+                amp_loss = 0.5 * (expert_loss + policy_loss)
+                grad_pen_loss = self.actor_critic.discriminator.compute_grad_pen(expert_state)
+                losses["amp_loss"] = amp_loss + grad_pen_loss
 
-        if self.amp_normalizer is not None:
-            self.amp_normalizer.update(policy_state.detach().cpu().numpy())
-            self.amp_normalizer.update(expert_state.detach().cpu().numpy())
+                if self.amp_normalizer is not None:
+                    self.amp_normalizer.update(policy_state.detach().cpu().numpy())
+                    self.amp_normalizer.update(expert_state.detach().cpu().numpy())
 
         return losses, inter_vars, stats
 

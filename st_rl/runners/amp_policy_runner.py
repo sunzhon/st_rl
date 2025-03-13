@@ -73,11 +73,14 @@ class AmpPolicyRunner(OnPolicyRunner):
             next_amp_obs = infos["observations"]["amp_policy"]
             next_amp_obs = next_amp_obs.to(self.device)
             amp_obs = amp_obs.to(self.device)
-            rewards = self.alg.actor_critic.discriminator.predict_amp_reward(amp_obs, next_amp_obs, rewards)
+            style_reward, rewards = self.alg.actor_critic.discriminator.predict_amp_reward(amp_obs, next_amp_obs, rewards)
+            infos["log"]["Episode_Reward/style_reward"] = style_reward.mean().item()
+            infos["log"]["Episode_Reward/task_reward"] = rewards.mean().item()
 
         # process the step
         self.alg.process_env_step(rewards, dones, infos, amp_obs, next_amp_obs)
         amp_obs = torch.clone(next_amp_obs)
+
         return obs, critic_obs, rewards, dones, infos, amp_obs
 
 

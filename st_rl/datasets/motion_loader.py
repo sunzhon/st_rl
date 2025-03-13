@@ -27,8 +27,8 @@ class AMPLoader:
         device="cuda:0",
         frame_start=None,
         frame_end=None,
-        augment_trajectory_num=100,
-        augment_frame_num=100,
+        augment_trajectory_num=None,
+        augment_frame_num=None,
         **kwargs,
     ):
         """
@@ -46,8 +46,6 @@ class AMPLoader:
         
         self.switch_quaternion = switch_quaternion
         self.shuffle = shuffle
-        self.augment_frame_num = augment_frame_num
-        self.augment_trajectory_num = augment_trajectory_num
 
         self.field_names = field_names
         self.root_rot_index = [
@@ -75,10 +73,7 @@ class AMPLoader:
                 motion_data = np.array(motion_json["Frames"])
                 # motion_data = self.reorder_from_pybullet_to_isaac(motion_data)
                 self.trajectory_fields = motion_json["Fields"]
-                print(
-                    f"[Dataset Info] Loaded trajectory fields: {self.trajectory_fields}"
-                )
-                assert set(field_names).issubset(set(self.trajectory_fields)), f"The arguments field {self.field_names} should have same elements with the dataset fields {self.trajectory_fields} in {motion_file}"
+                assert set(self.field_names).issubset(set(self.trajectory_fields)), f"The arguments field {self.field_names} should have same elements with the dataset fields {self.trajectory_fields} in {motion_file}"
                 reorder_field_index = [self.trajectory_fields.index(key) for key in self.field_names]
                 
                 if frame_start is None:
@@ -86,8 +81,12 @@ class AMPLoader:
                 if frame_end is None:
                     frame_end = motion_data.shape[0]
 
+
+                print(f"[Dataset Info] Load {motion_file}")
+                print(f"[Dataset Info] It has {motion_data.shape[0]} frames.")
                 motion_data = motion_data[frame_start:frame_end, reorder_field_index]
-                print(f"[Dataset Info] Re-ordered trajectory fields: {self.field_names}")
+                print(f"[Dataset Info] Select {motion_data.shape[0]} frames.")
+                #print(f"[Dataset Info] Re-ordered trajectory fields: {self.field_names}")
 
                 # Normalize and standardize quaternions.
                 for f_i in range(motion_data.shape[0]):
@@ -103,12 +102,11 @@ class AMPLoader:
                 frame_duration = float(motion_json["FrameDuration"])
                 self.trajectory_frame_durations.append(frame_duration)
                 traj_len = (motion_data.shape[0] - 1) * frame_duration
-                self.trajectory_lens.append(
-                    traj_len
-                )  # it is time [s], frame len* duration
+                self.trajectory_lens.append(traj_len)  # it is time [s], frame len* duration
                 self.trajectory_num_frames.append(float(motion_data.shape[0]))
 
-                print(f"Loaded {traj_len} s motion from {motion_file}.")
+                print(f"[Dataset Info] Select {traj_len} s motion from the trajectory.")
+                print(f"[Dataset Info] The trajectory fields are: {self.trajectory_fields}")
 
         # Normalize trajectory weights
         self.trajectory_weights = np.array(self.trajectory_weights) / np.sum(
@@ -119,10 +117,20 @@ class AMPLoader:
         self.trajectory_num_frames = np.array(self.trajectory_num_frames)
 
         # Preload transitions if specified
-        traj_idxs = self.weighted_traj_idx_sample_batch(size=augment_trajectory_num)
+        print(f"[Dataset Info] Preloading data into self.preloaded_s and self.preloaded_s_next")
+        if augment_frame_num is None:
+            self.augment_frame_num = max(self.trajectory_num_frames)
+        else:
+            self.augment_frame_num = augment_frame_num
+        if augment_trajectory_num is None:
+            self.augment_trajectory_num = self.num_motions
+        else:
+            self.augment_trajectory_num = augment_trajectory_num
+
+        traj_idxs = self.weighted_traj_idx_sample_batch(size=self.augment_trajectory_num)
         self.preloaded_s, self.preloaded_s_next = [], []
         for traj_idx in traj_idxs:
-            times = self.traj_time_sample_batch(traj_idx, size=augment_frame_num)
+            times = self.traj_time_sample_batch(traj_idx, size=self.augment_frame_num)
             s, s_next = [], []
             for frame_time in times:
                 s.append(self.sw_quat(self.get_frame_at_time(traj_idx, frame_time)))
@@ -133,9 +141,7 @@ class AMPLoader:
         self.preloaded_s = torch.stack(self.preloaded_s, dim=0)
         self.preloaded_s_next = torch.stack(self.preloaded_s_next, dim=0)
 
-        print(f"Finished preloading")
-
-        print(f"A trajectory shape with selected fields: {self.trajectories[0].shape}")
+        print(f"[Dataset Info] self.preloaded_s dim are {len(self.preloaded_s)} and {self.preloaded_s[0].shape}")
         print(f" Trajectory number: {len(self.trajectory_idxs)}")
 
     def reorder_from_pybullet_to_isaac(self, motion_data):
@@ -313,7 +319,10 @@ class AMPLoader:
 
     def expert_obs_generator(self, num_iterations, iteration_size):
         """Generates a batch of AMP transitions."""
-        assert iteration_size <= self.augment_trajectory_num, "The number of iterations should be less than the number of preloaded trajectories"
+        assert iteration_size <= self.augment_trajectory_num, (
+            f"The number of iterations {iteration_size} should be less than the "
+            f"number of preloaded trajectories {self.augment_trajectory_num}"
+        )
         if self.shuffle:
             traj_idxs = np.random.choice(self.preloaded_s.shape[0], size=iteration_size)  # sample random sequence of frame
         else:

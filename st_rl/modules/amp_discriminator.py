@@ -10,7 +10,7 @@ from .actor_critic_recurrent import ActorCriticRecurrent, get_activation
 
 class AMPDiscriminator(nn.Module):
     def __init__(
-            self, input_dim, amp_reward_coef, hidden_dims, task_reward_lerp=0.0, amp_grad_pen=5,device="cuda:0"):
+            self, input_dim, style_reward_coef, hidden_dims, task_reward_lerp=0.0, amp_grad_pen=5,device="cuda:0"):
         """
         Initialize the AMPDiscriminator.
 
@@ -26,7 +26,7 @@ class AMPDiscriminator(nn.Module):
         self.device = device
         self.input_dim = input_dim
 
-        self.amp_reward_coef = amp_reward_coef
+        self.style_reward_coef = style_reward_coef
         self.amp_grad_pen = amp_grad_pen
         self.task_reward_lerp = task_reward_lerp
 
@@ -96,14 +96,13 @@ class AMPDiscriminator(nn.Module):
             if normalizer is not None:
                 state = normalizer.normalize_torch(state, self.device)
                 next_state = normalizer.normalize_torch(next_state, self.device)
-            
             d = self.amp_linear(self.trunk(torch.cat([state, next_state], dim=-1)))
             # if the amp_obs of policy was discrimated as that from expert obs, then should get high rewards
-            reward = self.amp_reward_coef * torch.clamp(1 - (1/4) * torch.square(d - 1), min=0)
+            style_reward = self.style_reward_coef * torch.clamp(1 - (1/4) * torch.square(d - 1), min=0)
             if self.task_reward_lerp > 0:
-                reward = self._lerp_reward(reward, task_reward.unsqueeze(-1))
+                reward = self._lerp_reward(style_reward, task_reward.unsqueeze(-1))
             self.train()
-        return reward.squeeze() #, d
+        return style_reward.squeeze(), reward.squeeze() #, d
 
     def _lerp_reward(self, disc_r, task_r):
         """
