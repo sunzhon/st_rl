@@ -33,7 +33,6 @@ import os
 from collections import deque
 import statistics
 
-from tensorboardX import SummaryWriter
 import torch
 from st_rl.utils.metrics import *
 
@@ -118,13 +117,11 @@ class OnPolicyRunner:
             self.logger_type = self.logger_type.lower()
 
             if self.logger_type == "neptune":
-                from rsl_rl.utils.neptune_utils import NeptuneSummaryWriter
-
+                from st_rl.utils.neptune_utils import NeptuneSummaryWriter
                 self.writer = NeptuneSummaryWriter(log_dir=self.log_dir, flush_secs=10, cfg=self.cfg)
                 self.writer.log_config(self.env.cfg, self.cfg, self.alg_cfg, self.policy_cfg)
             elif self.logger_type == "wandb":
-                from rsl_rl.utils.wandb_utils import WandbSummaryWriter
-
+                from stl_rl.utils.wandb_utils import WandbSummaryWriter
                 self.writer = WandbSummaryWriter(log_dir=self.log_dir, flush_secs=10, cfg=self.cfg)
                 self.writer.log_config(self.env.cfg, self.cfg, self.alg_cfg, self.policy_cfg)
             elif self.logger_type == "tensorboard":
@@ -357,10 +354,8 @@ class OnPolicyRunner:
             )
 
         log_string += ep_string
-
         log_string += (f"""{'Eval metrics vel rmsd/step:':>{pad}} {self.metrics_velrmsd:.4f}\n""")
         log_string += (f"""{'Eval metrics CoT/step:':>{pad}} {self.metrics_CoT:.4f}\n""")
-
         log_string += (f"""{'-' * width}\n"""
                        f"""{'Total timesteps:':>{pad}} {self.tot_timesteps}\n"""
                        f"""{'Iteration time:':>{pad}} {iteration_time:.2f}s\n"""

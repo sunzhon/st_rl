@@ -87,7 +87,6 @@ class Normalize(torch.nn.Module):
         return x
     
 
-
 import numpy as np
 from typing import Tuple
 _EPS = np.finfo(float).eps * 4.0

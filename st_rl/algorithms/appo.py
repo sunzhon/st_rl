@@ -51,8 +51,8 @@ class APPOAlgoMixin:
         if "mimic_loss_coef" in amp_data_cfg.keys():
             self.mimic_loss_coef = amp_data_cfg["mimic_loss_coef"]
             print(f"mimic loss: {self.mimic_loss_coef}")
-        if "amp_loss_coef" in amp_data_cfg.keys():
-            self.amp_loss_coef = amp_data_cfg["amp_loss_coef"]
+        if "discriminator_loss_coef" in amp_data_cfg.keys():
+            self.discriminator_loss_coef = amp_data_cfg["discriminator_loss_coef"]
 
         # Initialize the AMP normalizer with the observation shape and device
         self.amp_normalizer = Normalizer(amp_data_cfg["amp_obs_dim"])
@@ -107,7 +107,7 @@ class APPOAlgoMixin:
 
         # Discriminator loss.
         if hasattr(self.actor_critic, "discriminator"):
-            if self.amp_loss_coef != 0:
+            if self.discriminator_loss_coef != 0:
                 policy_state = minibatch.amp_policy
                 expert_state = minibatch.amp_expert
                 with torch.no_grad():
@@ -128,7 +128,7 @@ class APPOAlgoMixin:
                 )
                 amp_loss = 0.5 * (expert_loss + policy_loss)
                 grad_pen_loss = self.actor_critic.discriminator.compute_grad_pen(expert_state)
-                losses["amp_loss"] = amp_loss + grad_pen_loss
+                losses["discriminator_loss"] = amp_loss + grad_pen_loss
 
                 if self.amp_normalizer is not None:
                     self.amp_normalizer.update(policy_state.detach().cpu().numpy())

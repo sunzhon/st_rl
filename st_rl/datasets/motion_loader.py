@@ -25,7 +25,7 @@ class AMPLoader:
         switch_quaternion=True,
         shuffle=False,
         device="cuda:0",
-        frame_start=None,
+        frame_begin=None,
         frame_end=None,
         augment_trajectory_num=None,
         augment_frame_num=None,
@@ -68,6 +68,7 @@ class AMPLoader:
         assert len(motion_files) > 0, "No motion files found."
         for i, motion_file in enumerate(motion_files):
             self.trajectory_names.append(motion_file.split(".")[0])
+            print(f"[Dataset Info] start to reading {motion_file}")
             with open(motion_file, "r") as f:
                 motion_json = json.load(f)
                 motion_data = np.array(motion_json["Frames"])
@@ -76,15 +77,15 @@ class AMPLoader:
                 assert set(self.field_names).issubset(set(self.trajectory_fields)), f"The arguments field {self.field_names} should have same elements with the dataset fields {self.trajectory_fields} in {motion_file}"
                 reorder_field_index = [self.trajectory_fields.index(key) for key in self.field_names]
                 
-                if frame_start is None:
-                    frame_start = 0
+                if frame_begin is None:
+                    frame_begin = 0
                 if frame_end is None:
                     frame_end = motion_data.shape[0]
 
 
                 print(f"[Dataset Info] Load {motion_file}")
                 print(f"[Dataset Info] It has {motion_data.shape[0]} frames.")
-                motion_data = motion_data[frame_start:frame_end, reorder_field_index]
+                motion_data = motion_data[frame_begin:frame_end, reorder_field_index]
                 print(f"[Dataset Info] Select {motion_data.shape[0]} frames.")
                 #print(f"[Dataset Info] Re-ordered trajectory fields: {self.field_names}")
 
@@ -236,11 +237,11 @@ class AMPLoader:
         p = (float(time) / self.trajectory_lens[traj_idx])  # percentage of the time on the trajectory
         n = self.trajectories[traj_idx].shape[0]  # number of traj_idx trajectory
         idx_low, idx_high = int(np.floor(p * n)), int(np.ceil(p * n))
-        frame_start = self.trajectories[traj_idx][idx_low]
+        frame_begin = self.trajectories[traj_idx][idx_low]
         frame_end = self.trajectories[traj_idx][idx_high]
         blend = p * n - idx_low
-        # return self.slerp(frame_start, frame_end, blend)
-        return self.blend_frame_pose(frame_start, frame_end, blend)
+        # return self.slerp(frame_begin, frame_end, blend)
+        return self.blend_frame_pose(frame_begin, frame_end, blend)
 
     def get_frame_at_time_batch(self, traj_idxs, times):
         """Returns frame for the given trajectory at the specified time."""
@@ -249,7 +250,7 @@ class AMPLoader:
         idx_low, idx_high = np.floor(p * n).astype(np.int32), np.ceil(p * n).astype(
             np.int32
         )
-        all_frame_starts = torch.zeros(
+        all_frame_begins = torch.zeros(
             len(traj_idxs), self.observation_dim, device=self.device
         )
         all_frame_ends = torch.zeros(
@@ -258,23 +259,23 @@ class AMPLoader:
         for traj_idx in set(traj_idxs):
             trajectory = self.trajectories[traj_idx]
             traj_mask = traj_idxs == traj_idx
-            all_frame_starts[traj_mask] = trajectory[idx_low[traj_mask]]
+            all_frame_begins[traj_mask] = trajectory[idx_low[traj_mask]]
             all_frame_ends[traj_mask] = trajectory[idx_high[traj_mask]]
         blend = torch.tensor(
             p * n - idx_low, device=self.device, dtype=torch.float32
         ).unsqueeze(-1)
-        # return self.slerp(all_frame_starts, all_frame_ends, blend)
-        return self.blend_frame_pose(all_frame_starts, all_frame_ends, blend)
+        # return self.slerp(all_frame_begins, all_frame_ends, blend)
+        return self.blend_frame_pose(all_frame_begins, all_frame_ends, blend)
 
     def get_full_frame_at_time(self, traj_idx, time):
         """Returns full frame for the given trajectory at the specified time."""
         p = float(time) / self.trajectory_lens[traj_idx]
         n = self.trajectories_full[traj_idx].shape[0]
         idx_low, idx_high = int(np.floor(p * n)), int(np.ceil(p * n))
-        frame_start = self.trajectories_full[traj_idx][idx_low]
+        frame_begin = self.trajectories_full[traj_idx][idx_low]
         frame_end = self.trajectories_full[traj_idx][idx_high]
         blend = p * n - idx_low
-        return self.blend_frame_pose(frame_start, frame_end, blend)
+        return self.blend_frame_pose(frame_begin, frame_end, blend)
 
 
 

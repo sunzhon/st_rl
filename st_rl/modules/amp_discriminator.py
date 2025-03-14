@@ -10,7 +10,7 @@ from .actor_critic_recurrent import ActorCriticRecurrent, get_activation
 
 class AMPDiscriminator(nn.Module):
     def __init__(
-            self, input_dim, style_reward_coef, hidden_dims, task_reward_lerp=0.0, amp_grad_pen=5,device="cuda:0"):
+            self, input_dim, style_reward_coef, hidden_dims, task_reward_lerp=0.0, discriminator_grad_pen=5,device="cuda:0"):
         """
         Initialize the AMPDiscriminator.
 
@@ -27,7 +27,7 @@ class AMPDiscriminator(nn.Module):
         self.input_dim = input_dim
 
         self.style_reward_coef = style_reward_coef
-        self.amp_grad_pen = amp_grad_pen
+        self.discriminator_grad_pen = discriminator_grad_pen
         self.task_reward_lerp = task_reward_lerp
 
         # Build the discriminator network
@@ -75,10 +75,10 @@ class AMPDiscriminator(nn.Module):
         grad = autograd.grad(outputs=disc, inputs=expert_data, grad_outputs=ones, create_graph=True, retain_graph=True, only_inputs=True)[0]
 
         # Enforce that the grad norm approaches 0.
-        grad_pen = self.amp_grad_pen * (grad.norm(2, dim=1) - 0).pow(2).mean()
+        grad_pen = self.discriminator_grad_pen * (grad.norm(2, dim=1) - 0).pow(2).mean()
         return grad_pen
 
-    def predict_amp_reward(self, state, next_state, task_reward, normalizer=None):
+    def predict_amp_reward(self, state, next_state, task_reward, normalizer):
         """
         Predict the AMP reward.
 
@@ -86,22 +86,21 @@ class AMPDiscriminator(nn.Module):
             state: Current state tensor.
             next_state: Next state tensor.
             task_reward: Task reward tensor.
-            normalizer: Normalizer for the state tensors.
-
         Returns:
             Predicted AMP reward and discriminator output.
         """
         with torch.no_grad():
             self.eval()
-            if normalizer is not None:
-                state = normalizer.normalize_torch(state, self.device)
-                next_state = normalizer.normalize_torch(next_state, self.device)
-            d = self.amp_linear(self.trunk(torch.cat([state, next_state], dim=-1)))
+            state = normalizer.normalize_torch(torch.cat([state,next_state],dim=-1), self.device)
+            d = self.forward(state)
             # if the amp_obs of policy was discrimated as that from expert obs, then should get high rewards
             style_reward = self.style_reward_coef * torch.clamp(1 - (1/4) * torch.square(d - 1), min=0)
             if self.task_reward_lerp > 0:
                 reward = self._lerp_reward(style_reward, task_reward.unsqueeze(-1))
+            else:
+                reward = style_reward
             self.train()
+
         return style_reward.squeeze(), reward.squeeze() #, d
 
     def _lerp_reward(self, disc_r, task_r):
