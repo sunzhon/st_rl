@@ -61,8 +61,10 @@ class NeptuneSummaryWriter(SummaryWriter):
         }
 
         run_name = os.path.split(log_dir)[-1]
+        experiment_name = os.path.split(os.path.split(log_dir)[-2])[-1]
 
         self.neptune_logger.run["log_dir"].log(run_name)
+        self.neptune_logger.run["sys/tags"].add(experiment_name)
 
     def _map_path(self, path):
         if path in self.name_map:
