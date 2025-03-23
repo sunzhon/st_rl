@@ -52,6 +52,12 @@ class AmpPolicyRunner(OnPolicyRunner):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        if self.alg.actor_critic.discriminator is not None:
+            # add demo data to env
+            self.env.env.env.scene["robot"].data.demo_init_states = self.alg.amp_data.init_states
+            self.env.env.env.scene["robot"].data.demo_expressive_dof_commands = self.alg.amp_data.expressive_dof_commands
+            self.env.env.env.scene["robot"].data.demo_expressive_link_commands = self.alg.amp_data.expressive_link_commands
+    
     def rollout_step(self, obs, critic_obs, amp_obs):
         # get actions from policy
         actions = self.alg.act(obs, critic_obs)
@@ -76,6 +82,9 @@ class AmpPolicyRunner(OnPolicyRunner):
             style_reward, rewards = self.alg.actor_critic.discriminator.predict_amp_reward(amp_obs, next_amp_obs, rewards, self.alg.amp_normalizer)
             infos["log"]["Episode_Reward/style_reward"] = style_reward.mean().item()
             infos["log"]["Episode_Reward/task_reward"] = rewards.mean().item()
+            self.env.env.env.scene["robot"].data.demo_velocity_commands = self.alg.amp_data.velocity_commands
+            self.env.env.env.scene["robot"].data.demo_expressive_dof_commands = self.alg.amp_data.expressive_dof_commands
+            self.env.env.env.scene["robot"].data.demo_expressive_link_commands = self.alg.amp_data.expressive_link_commands
 
         # process the step
         self.alg.process_env_step(rewards, dones, infos, amp_obs, next_amp_obs)
@@ -118,8 +127,8 @@ class AmpPolicyRunner(OnPolicyRunner):
         for it in range(start_iter, tot_iter):
             #1) Rollout, inference_mode for data collection
             with torch.inference_mode(self.cfg.get("inference_mode_rollout", True)):
-                # make an expert obs generator
-                self.alg.expert_obs_generator = self.alg.amp_data.expert_obs_generator(self.num_steps_per_env, self.env.num_envs)
+                # make an expert obs generator, 
+                self.alg.expert_obs_generator = self.alg.amp_data.expert_obs_generator()
                 # data collection
                 for i in range(self.num_steps_per_env):
                     obs, critic_obs, rewards, dones, infos, amp_obs = self.rollout_step(obs, critic_obs, amp_obs)
