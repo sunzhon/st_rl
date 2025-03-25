@@ -40,6 +40,8 @@ class StRlMetricEnvWrapper(RslRlVecEnvWrapper):
         self.default_body_mass = torch.sum(self.data.default_mass, dim=1).to(self.device)
         self.payloads = torch.zeros_like(self.default_body_mass)
         self.g = 9.8  # Gravitational constant
+        self.start_log = False
+        self.finish_log = False
 
         if enable_logger:
             self.logger = Logger(env.unwrapped.sim.cfg.dt, log_dir=log_dir)
@@ -105,6 +107,17 @@ class StRlMetricEnvWrapper(RslRlVecEnvWrapper):
         """Calculate the RMSD of linear velocity."""
         return ((self.base_lin_vel[:, 0] - self.commands[:, 0]) ** 2).cpu() ** 0.5
 
+    def start_logging(self):
+        print(f"[Logging] Start logging data")
+        self.start_log=True
+        self.finish_log=False
+
+
+    def finish_logging(self):
+        print(f"[Logging] Finish logging data")
+        self.finish_log=True
+
+
     def log_update(self, robot_index=0):
         """Log the states of the robot.
 
@@ -136,10 +149,12 @@ class StRlMetricEnvWrapper(RslRlVecEnvWrapper):
         # Log joint-specific states
         for idx in range(self.num_actions):
             #states[f'action_{idx}'] = self.actions[robot_index, idx].item()
-            states[f'dof_pos_target_{idx}'] = self.data.joint_pos_target[robot_index, idx].item()
-            states[f'dof_pos_{idx}'] = self.dof_pos[robot_index, idx].item()
-            states[f'dof_vel_{idx}'] = self.dof_vel[robot_index, idx].item()
-            states[f'dof_torques_{idx}'] = self.dof_torque[robot_index, idx].item()
+            self.joint_names = self.unwrapped.scene["robot"].joint_names
+
+            states[f'{self.joint_names[idx]}_pos_target'] = self.data.joint_pos_target[robot_index, idx].item()
+            states[f'{self.joint_names[idx]}_pos'] = self.dof_pos[robot_index, idx].item()
+            states[f'{self.joint_names[idx]}_vel'] = self.dof_vel[robot_index, idx].item()
+            states[f'{self.joint_names[idx]}_tau'] = self.dof_torque[robot_index, idx].item()
 
         """
         # Log contact forces
@@ -157,4 +172,5 @@ class StRlMetricEnvWrapper(RslRlVecEnvWrapper):
         if self.logger is not None:
             self.logger.save()
             self.logger.reset()
+            self.start_log = False
             
