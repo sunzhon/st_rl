@@ -37,6 +37,7 @@ class StRlMetricEnvWrapper(RslRlVecEnvWrapper):
         asset_cfg = SceneEntityCfg("robot")
         asset = self.unwrapped.scene[asset_cfg.name]
         self.data = asset.data
+        self.joint_names = self.unwrapped.scene["robot"].joint_names
         self.default_body_mass = torch.sum(self.data.default_mass, dim=1).to(self.device)
         self.payloads = torch.zeros_like(self.default_body_mass)
         self.g = 9.8  # Gravitational constant
@@ -148,9 +149,7 @@ class StRlMetricEnvWrapper(RslRlVecEnvWrapper):
 
         # Log joint-specific states
         for idx in range(self.num_actions):
-            #states[f'action_{idx}'] = self.actions[robot_index, idx].item()
-            self.joint_names = self.unwrapped.scene["robot"].joint_names
-
+            states[f"{self.joint_names[idx]}_action"] = self.unwrapped.action_manager._action[robot_index,idx].item()
             states[f'{self.joint_names[idx]}_pos_target'] = self.data.joint_pos_target[robot_index, idx].item()
             states[f'{self.joint_names[idx]}_pos'] = self.dof_pos[robot_index, idx].item()
             states[f'{self.joint_names[idx]}_vel'] = self.dof_vel[robot_index, idx].item()

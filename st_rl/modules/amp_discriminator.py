@@ -10,7 +10,7 @@ from .actor_critic_recurrent import ActorCriticRecurrent, get_activation
 
 class AMPDiscriminator(nn.Module):
     def __init__(
-            self, input_dim, style_reward_coef, hidden_dims, task_reward_lerp=0.0, discriminator_grad_pen=5,device="cuda:0"):
+            self, input_dim, style_reward_coef, hidden_dims, task_reward_lerp=0.0, discriminator_grad_pen=5,**kwargs):
         """
         Initialize the AMPDiscriminator.
 
@@ -23,7 +23,7 @@ class AMPDiscriminator(nn.Module):
         """
         super(AMPDiscriminator, self).__init__()
 
-        self.device = device
+        #self.device = device
         self.input_dim = input_dim
 
         self.style_reward_coef = style_reward_coef
@@ -37,8 +37,8 @@ class AMPDiscriminator(nn.Module):
             amp_layers.append(nn.Linear(curr_in_dim, hidden_dim))
             amp_layers.append(nn.ReLU())
             curr_in_dim = hidden_dim
-        self.trunk = nn.Sequential(*amp_layers).to(device)
-        self.amp_linear = nn.Linear(hidden_dims[-1], 1).to(device)
+        self.trunk = nn.Sequential(*amp_layers) #.to(device)
+        self.amp_linear = nn.Linear(hidden_dims[-1], 1) #.to(device)
 
         self.trunk.train()
         self.amp_linear.train()
@@ -78,7 +78,7 @@ class AMPDiscriminator(nn.Module):
         grad_pen = self.discriminator_grad_pen * (grad.norm(2, dim=1) - 0).pow(2).mean()
         return grad_pen
 
-    def predict_amp_reward(self, state, next_state, task_reward, normalizer):
+    def predict_amp_reward(self, state, next_state, task_reward, normalizer, device):
         """
         Predict the AMP reward.
 
@@ -91,7 +91,7 @@ class AMPDiscriminator(nn.Module):
         """
         with torch.no_grad():
             self.eval()
-            state = normalizer.normalize_torch(torch.cat([state,next_state],dim=-1), self.device)
+            state = normalizer.normalize_torch(torch.cat([state,next_state],dim=-1), device)
             d = self.forward(state)
             # if the amp_obs of policy was discrimated as that from expert obs, then should get high rewards
             style_reward = self.style_reward_coef * torch.clamp(1 - (1/4) * torch.square(d - 1), min=0)

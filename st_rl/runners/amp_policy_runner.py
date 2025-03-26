@@ -79,7 +79,7 @@ class AmpPolicyRunner(OnPolicyRunner):
             next_amp_obs = infos["observations"]["amp_policy"]
             next_amp_obs = next_amp_obs.to(self.device)
             amp_obs = amp_obs.to(self.device)
-            style_reward, rewards = self.alg.actor_critic.discriminator.predict_amp_reward(amp_obs, next_amp_obs, rewards, self.alg.amp_normalizer)
+            style_reward, rewards = self.alg.actor_critic.discriminator.predict_amp_reward(amp_obs, next_amp_obs, rewards, self.alg.amp_normalizer, self.device)
             infos["log"]["Episode_Reward/style_reward"] = style_reward.mean().item()
             infos["log"]["Episode_Reward/task_reward"] = rewards.mean().item()
             self.env.env.env.scene["robot"].data.demo_velocity_commands = self.alg.amp_data.velocity_commands

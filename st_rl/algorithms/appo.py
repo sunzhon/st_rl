@@ -46,6 +46,7 @@ class APPOAlgoMixin:
         # of the policy
         # AMP data loader (adversarial motion prior)
         amp_data_cfg = kwargs.get("amp_data", {})
+        amp_data_cfg["device"] = self.device
         self.amp_data = AMPLoader(**amp_data_cfg)
 
         if "mimic_loss_coef" in amp_data_cfg.keys():
