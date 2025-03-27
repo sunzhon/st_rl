@@ -91,6 +91,7 @@ class OnPolicyRunner:
             actor_obs_shape=(self.env.num_obs,), 
             critic_obs_shape=(self.policy_cfg["num_critic_obs"],), 
             action_shape=(self.env.num_actions,),
+            device=self.device,
             **self.cfg["storage"] if "storage" in self.cfg.keys() else {},
         )
         # init normalization

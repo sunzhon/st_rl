@@ -44,7 +44,6 @@ class AMPLoader:
             motion_files: List of motion files.
             device: Device to run the model on (e.g., 'cpu' or 'cuda').
         """
-        self.device = device
         self.time_between_frames = time_between_frames  # the duration between two cohenrent frames
         
         self.switch_quaternion = switch_quaternion
