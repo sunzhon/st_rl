@@ -55,7 +55,7 @@ class AmpPolicyRunner(OnPolicyRunner):
         if self.alg.actor_critic.discriminator is not None:
             # add demo data to env
             self.env.unwrapped.scene["robot"].data.demo_init_states = self.alg.amp_data.init_states
-            self.env.unwrapped.scene["robot"].data.demo_velocity_commands = self.alg.amp_data.velocity_commands
+            self.env.unwrapped.scene["robot"].data.demo_expressive_root_vel = self.alg.amp_data.expressive_root_vel
             self.env.unwrapped.scene["robot"].data.demo_expressive_joint_pos = self.alg.amp_data.expressive_joint_pos
             self.env.unwrapped.scene["robot"].data.demo_expressive_link_pos = self.alg.amp_data.expressive_link_pos
     
@@ -83,7 +83,7 @@ class AmpPolicyRunner(OnPolicyRunner):
             style_reward, rewards = self.alg.actor_critic.discriminator.predict_style_reward(amp_obs, next_amp_obs, rewards, self.alg.amp_normalizer, self.device)
             infos["log"]["Episode_Reward/style_reward"] = style_reward.mean().item()
             infos["log"]["Episode_Reward/task_reward"] = rewards.mean().item()
-            self.env.unwrapped.scene["robot"].data.demo_velocity_commands = self.alg.amp_data.velocity_commands
+            self.env.unwrapped.scene["robot"].data.demo_expressive_root_vel = self.alg.amp_data.expressive_root_vel
             self.env.unwrapped.scene["robot"].data.demo_expressive_joint_pos = self.alg.amp_data.expressive_joint_pos
             self.env.unwrapped.scene["robot"].data.demo_expressive_link_pos = self.alg.amp_data.expressive_link_pos
 

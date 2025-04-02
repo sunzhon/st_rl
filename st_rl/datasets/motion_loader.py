@@ -158,9 +158,9 @@ class AMPLoader:
         init_dof_vel_index = [self.trajectory_fields.index(key) for key in [key+"_dof_vel" for key in init_dof_state_fields]]
         self.init_states = self.preloaded_s[:,0, init_state_fields_index + init_dof_pos_index + init_dof_vel_index]
         
-        # Select velocity pos
-        self.velocity_commands_index = [self.trajectory_fields.index(key) for key in ["root_vel_x", "root_vel_y","root_ang_vel_z"]]
-        self.velocity_commands = self.preloaded_s[:,:,self.velocity_commands_index][traj_idxs, 0,:]
+        # Select root velocity
+        self.expressive_root_vel_index = [self.trajectory_fields.index(key) for key in ["root_vel_x", "root_vel_y","root_ang_vel_z"]]
+        self.expressive_root_vel = self.preloaded_s[:,:,self.expressive_root_vel_index][traj_idxs, 0,:]
         
         # Select expressive joint pos
         expressive_joint_pos_fields = [key+"_dof_pos" for key in expressive_joint_name]
@@ -288,7 +288,7 @@ class AMPLoader:
             s = self.selected_preloaded_s[traj_idxs, frame_idx, :]  # differet trajectories and frame times
             s_next = self.selected_preloaded_s_next[traj_idxs, frame_idx, :]
             #import pdb;pdb.set_trace()
-            self.velocity_commands = self.preloaded_s[:,:,self.velocity_commands_index][traj_idxs, frame_idx,:]
+            self.expressive_root_vel = self.preloaded_s[:,:,self.expressive_root_vel_index][traj_idxs, frame_idx,:]
             self.expressive_joint_pos = self.preloaded_s[:,:,self.expressive_joint_pos_index][traj_idxs, frame_idx,:]
             self.expressive_link_pos = self.preloaded_s[:,:,self.expressive_link_pos_index][traj_idxs, frame_idx,:]
             
