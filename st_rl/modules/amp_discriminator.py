@@ -78,7 +78,7 @@ class AMPDiscriminator(nn.Module):
         grad_pen = self.discriminator_grad_pen * (grad.norm(2, dim=1) - 0).pow(2).mean()
         return grad_pen
 
-    def predict_amp_reward(self, state, next_state, task_reward, normalizer, device):
+    def predict_style_reward(self, state, next_state, task_reward, normalizer, device):
         """
         Predict the AMP reward.
 

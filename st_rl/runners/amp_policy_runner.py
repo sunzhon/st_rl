@@ -54,9 +54,10 @@ class AmpPolicyRunner(OnPolicyRunner):
 
         if self.alg.actor_critic.discriminator is not None:
             # add demo data to env
-            self.env.env.env.scene["robot"].data.demo_init_states = self.alg.amp_data.init_states
-            self.env.env.env.scene["robot"].data.demo_expressive_dof_commands = self.alg.amp_data.expressive_dof_commands
-            self.env.env.env.scene["robot"].data.demo_expressive_link_commands = self.alg.amp_data.expressive_link_commands
+            self.env.unwrapped.scene["robot"].data.demo_init_states = self.alg.amp_data.init_states
+            self.env.unwrapped.scene["robot"].data.demo_velocity_commands = self.alg.amp_data.velocity_commands
+            self.env.unwrapped.scene["robot"].data.demo_expressive_joint_pos = self.alg.amp_data.expressive_joint_pos
+            self.env.unwrapped.scene["robot"].data.demo_expressive_link_pos = self.alg.amp_data.expressive_link_pos
     
     def rollout_step(self, obs, critic_obs, amp_obs):
         # get actions from policy
@@ -79,12 +80,12 @@ class AmpPolicyRunner(OnPolicyRunner):
             next_amp_obs = infos["observations"]["amp_policy"]
             next_amp_obs = next_amp_obs.to(self.device)
             amp_obs = amp_obs.to(self.device)
-            style_reward, rewards = self.alg.actor_critic.discriminator.predict_amp_reward(amp_obs, next_amp_obs, rewards, self.alg.amp_normalizer, self.device)
+            style_reward, rewards = self.alg.actor_critic.discriminator.predict_style_reward(amp_obs, next_amp_obs, rewards, self.alg.amp_normalizer, self.device)
             infos["log"]["Episode_Reward/style_reward"] = style_reward.mean().item()
             infos["log"]["Episode_Reward/task_reward"] = rewards.mean().item()
-            self.env.env.env.scene["robot"].data.demo_velocity_commands = self.alg.amp_data.velocity_commands
-            self.env.env.env.scene["robot"].data.demo_expressive_dof_commands = self.alg.amp_data.expressive_dof_commands
-            self.env.env.env.scene["robot"].data.demo_expressive_link_commands = self.alg.amp_data.expressive_link_commands
+            self.env.unwrapped.scene["robot"].data.demo_velocity_commands = self.alg.amp_data.velocity_commands
+            self.env.unwrapped.scene["robot"].data.demo_expressive_joint_pos = self.alg.amp_data.expressive_joint_pos
+            self.env.unwrapped.scene["robot"].data.demo_expressive_link_pos = self.alg.amp_data.expressive_link_pos
 
         # process the step
         self.alg.process_env_step(rewards, dones, infos, amp_obs, next_amp_obs)

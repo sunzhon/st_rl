@@ -20,7 +20,7 @@ class AMPLoader:
             os.getenv("HOME")
             + "/workspace/kepler_ws/KeplerRobot/datasets/motion_files/*"
         ),
-        selected_fields=None,
+        style_fields=None,
         switch_quaternion=False,
         shuffle=False,
         device="cuda:0",
@@ -30,8 +30,9 @@ class AMPLoader:
         augment_frame_num=None,
         init_root_state_fields=None,
         init_dof_state_fields=None,
-        expressive_dof_name=None,
+        expressive_joint_name=None,
         expressive_link_name=None,
+        random_start = False,
         **kwargs,
     ):
         """
@@ -44,12 +45,16 @@ class AMPLoader:
             motion_files: List of motion files.
             device: Device to run the model on (e.g., 'cpu' or 'cuda').
         """
+
+        print(f"[Datset Info] Motion files: \n{motion_files}")
         self.time_between_frames = time_between_frames  # the duration between two cohenrent frames
         
         self.switch_quaternion = switch_quaternion
         self.shuffle = shuffle
 
-        self.selected_fields = selected_fields
+        self.style_fields = style_fields
+
+        self.random_start = random_start
 
 
         # Values to store for each trajectory.
@@ -82,7 +87,7 @@ class AMPLoader:
                 print(f"[Dataset Info] It has {motion_data.shape[0]} frames.")
                 motion_data = motion_data[frame_begin:frame_end, :]
                 print(f"[Dataset Info] Select {motion_data.shape[0]} frames.")
-                #print(f"[Dataset Info] Re-ordered trajectory fields: {self.selected_fields}")
+                #print(f"[Dataset Info] Re-ordered trajectory fields: {self.style_fields}")
 
                 # Normalize and standardize quaternions.
                 for f_i in range(motion_data.shape[0]):
@@ -102,7 +107,7 @@ class AMPLoader:
                 self.trajectory_num_frames.append(float(motion_data.shape[0]))
 
                 print(f"[Dataset Info] Select {traj_len} s motion from the trajectory.")
-                print(f"[Dataset Info] The trajectory fields are: {self.trajectory_fields}")
+                #print(f"[Dataset Info] The trajectory fields are: {self.trajectory_fields}")
 
         # Normalize trajectory weights
         self.trajectory_weights = np.array(self.trajectory_weights) / np.sum(
@@ -127,7 +132,7 @@ class AMPLoader:
 
         # Define the field names for the dataset.
         self.root_rot_index = [
-            self.selected_fields.index("root_rot_" + key) for key in ["x", "y", "z", "w"]
+            self.style_fields.index("root_rot_" + key) for key in ["x", "y", "z", "w"]
         ]
 
         traj_idxs = self.weighted_traj_idx_sample_batch(size=self.augment_trajectory_num)
@@ -153,23 +158,24 @@ class AMPLoader:
         init_dof_vel_index = [self.trajectory_fields.index(key) for key in [key+"_dof_vel" for key in init_dof_state_fields]]
         self.init_states = self.preloaded_s[:,0, init_state_fields_index + init_dof_pos_index + init_dof_vel_index]
         
-        # Select velocity commands
+        # Select velocity pos
         self.velocity_commands_index = [self.trajectory_fields.index(key) for key in ["root_vel_x", "root_vel_y","root_ang_vel_z"]]
         self.velocity_commands = self.preloaded_s[:,:,self.velocity_commands_index][traj_idxs, 0,:]
         
-        # Select expressive commands
-        expressive_dof_command_fields = [key+"_dof_pos" for key in expressive_dof_name]
-        self.expressive_dof_commands_index = [self.trajectory_fields.index(key) for key in expressive_dof_command_fields] 
-        self.expressive_dof_commands = self.preloaded_s[:,:,self.expressive_dof_commands_index][traj_idxs, 0,:]
+        # Select expressive joint pos
+        expressive_joint_pos_fields = [key+"_dof_pos" for key in expressive_joint_name]
+        self.expressive_joint_pos_index = [self.trajectory_fields.index(key) for key in expressive_joint_pos_fields] 
+        self.expressive_joint_pos = self.preloaded_s[:,:,self.expressive_joint_pos_index][traj_idxs, 0,:]
 
-        expressive_link_command_fields = [key1 + key2 for key1 in expressive_link_name for key2 in ["_x", "_y", "_z"]]
-        self.expressive_link_commands_index = [self.trajectory_fields.index(key) for key in expressive_link_command_fields] 
-        self.expressive_link_commands = self.preloaded_s[:,:,self.expressive_link_commands_index][traj_idxs, 0,:]
+        # Select expressive link pos
+        expressive_link_pos_fields = [key1 + key2 for key1 in expressive_link_name for key2 in ["_x", "_y", "_z"]]
+        self.expressive_link_pos_index = [self.trajectory_fields.index(key) for key in expressive_link_pos_fields] 
+        self.expressive_link_pos = self.preloaded_s[:,:,self.expressive_link_pos_index][traj_idxs, 0,:]
 
         # Select fields
-        print(f"[Dataset Info] The SELECTED trajectory fields are: {self.selected_fields}")
-        assert set(self.selected_fields).issubset(set(self.trajectory_fields)), f"The arguments field {self.selected_fields} should have same elements with the dataset fields {self.trajectory_fields} in {motion_file}"
-        reorder_field_index = [self.trajectory_fields.index(key) for key in self.selected_fields]
+        #print(f"[Dataset Info] The SELECTED trajectory fields are: {self.style_fields}")
+        assert set(self.style_fields).issubset(set(self.trajectory_fields)), f"The arguments field {self.style_fields} should have same elements with the dataset fields {self.trajectory_fields} in {motion_file}"
+        reorder_field_index = [self.trajectory_fields.index(key) for key in self.style_fields]
         self.selected_preloaded_s = self.preloaded_s[:,:,reorder_field_index]
         self.selected_preloaded_s_next = self.preloaded_s_next[:,:,reorder_field_index]
     
@@ -199,11 +205,12 @@ class AMPLoader:
         if self.shuffle:
             time_samples = (self.trajectory_lens[traj_idx] * np.random.uniform(size=int(size))- subst)
         else:
-            random_start_threshold = 1-size/(1+self.trajectories[traj_idx].shape[0])
-            """
-            #NOTE: data frame num must be large than 2*num_steps_per_env
-            """
-            start_time = np.random.uniform(high=random_start_threshold, size=1)*self.trajectory_lens[traj_idx]
+            if self.random_start:
+                random_start_threshold = 1-size/(1+self.trajectories[traj_idx].shape[0])
+                #NOTE: data frame num must be large than 2*num_steps_per_env
+                start_time = np.random.uniform(high=random_start_threshold, size=1)*self.trajectory_lens[traj_idx]
+            else:
+                start_time = 0.0
             time_samples = start_time + np.arange(0, size * self.time_between_frames, self.time_between_frames)
             time_samples = np.minimum(time_samples, self.trajectory_lens[traj_idx]-subst)
         return np.maximum(np.zeros_like(time_samples), time_samples)
@@ -282,8 +289,8 @@ class AMPLoader:
             s_next = self.selected_preloaded_s_next[traj_idxs, frame_idx, :]
             #import pdb;pdb.set_trace()
             self.velocity_commands = self.preloaded_s[:,:,self.velocity_commands_index][traj_idxs, frame_idx,:]
-            self.expressive_dof_commands = self.preloaded_s[:,:,self.expressive_dof_commands_index][traj_idxs, frame_idx,:]
-            self.expressive_link_commands = self.preloaded_s[:,:,self.expressive_link_commands_index][traj_idxs, frame_idx,:]
+            self.expressive_joint_pos = self.preloaded_s[:,:,self.expressive_joint_pos_index][traj_idxs, frame_idx,:]
+            self.expressive_link_pos = self.preloaded_s[:,:,self.expressive_link_pos_index][traj_idxs, frame_idx,:]
             
             yield torch.cat((s, s_next), dim=-1)
 
@@ -402,7 +409,7 @@ if __name__ == "__main__":
             os.getenv("HOME")
             + "/workspace/kepler_ws/KeplerRobot/datasets/motion_files/saved_h1_data.txt"
         ),
-        selected_fields=reordered_fields,
+        style_fields=reordered_fields,
         augment_trajectory_num=100,
         augment_frame_num=10000,
         device="cuda:0",
