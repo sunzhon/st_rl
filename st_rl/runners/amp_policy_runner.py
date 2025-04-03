@@ -82,9 +82,10 @@ class AmpPolicyRunner(OnPolicyRunner):
         if self.policy_cfg.get("amp_discriminator") is not None:
             amp_obs = infos["observations"]["amp_policy"]
             amp_obs = amp_obs.to(self.device)
-            style_reward, rewards = self.alg.actor_critic.discriminator.predict_style_reward(amp_obs, rewards, self.alg.amp_normalizer, self.device)
+            style_reward, task_reward, rewards = self.alg.actor_critic.discriminator.predict_style_reward(amp_obs, rewards, self.alg.amp_normalizer, self.device)
             infos["log"]["Episode_Reward/style_reward"] = style_reward.mean().item()
-            infos["log"]["Episode_Reward/task_reward"] = rewards.mean().item()
+            infos["log"]["Episode_Reward/task_reward"] = task_reward.mean().item()
+            infos["log"]["Episode_Reward/merge_rewards"] = rewards.mean().item()
         else:
             print("Please define amp_discriminator")
 

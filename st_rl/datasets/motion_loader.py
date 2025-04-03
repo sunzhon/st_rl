@@ -33,7 +33,7 @@ class AMPLoader:
         expressive_joint_name=None,
         expressive_link_name=None,
         random_start = False,
-        amp_obs_history_length=0,
+        amp_obs_history_length=0, # 0 mean no history, only current frame 
         **kwargs,
     ):
         """
@@ -143,7 +143,7 @@ class AMPLoader:
         traj_idxs = self.weighted_traj_idx_sample_batch(size=self.augment_trajectory_num)
         self.preloaded_s, self.preloaded_s_next = [], []
         for traj_idx in traj_idxs:
-            times = self.traj_time_sample_batch(traj_idx, size=self.augment_frame_num+self.amp_obs_history_length)
+            times = self.traj_time_sample_batch(traj_idx, size=self.augment_frame_num + self.amp_obs_history_length)
             s, s_next = [], []
             for frame_time in times:
                 s.append(self.sw_quat(self.get_frame_at_time(traj_idx, frame_time)))
@@ -291,7 +291,7 @@ class AMPLoader:
             traj_idxs = np.arange(self.selected_preloaded_s.shape[0])
 
         for frame_idx in range(self.augment_frame_num):
-            s_f = self.selected_preloaded_s[traj_idxs, frame_idx:frame_idx+self.amp_obs_history_length, :]  # differet trajectories and frame times
+            s_f = self.selected_preloaded_s[traj_idxs, frame_idx:frame_idx+self.amp_obs_history_length+1, :]  # differet trajectories and frame times
             #import pdb;pdb.set_trace()
             self.expressive_root_vel = self.preloaded_s[:,:,self.expressive_root_vel_index][traj_idxs, frame_idx+self.amp_obs_history_length,:]
             if self.expressive_joint_name is not None:

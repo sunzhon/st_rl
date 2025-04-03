@@ -101,7 +101,7 @@ class AMPDiscriminator(nn.Module):
                 reward = style_reward
             self.train()
 
-        return style_reward.squeeze(), reward.squeeze() #, d
+        return style_reward.squeeze(), task_reward.squeeze(), reward.squeeze() #, d
 
     def _lerp_reward(self, disc_r, task_r):
         """
