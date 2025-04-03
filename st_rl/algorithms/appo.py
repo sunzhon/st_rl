@@ -109,7 +109,6 @@ class APPOAlgoMixin:
                 policy_state = minibatch.amp_policy
                 expert_state = minibatch.amp_expert
                 with torch.no_grad():
-                    #import pdb; pdb.set_trace()
                     policy_state = self.amp_normalizer.normalize_torch(
                         policy_state, self.device
                     )
