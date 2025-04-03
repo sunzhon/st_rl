@@ -56,6 +56,9 @@ class AMPLoader:
 
         self.random_start = random_start
 
+        self.expressive_joint_name = expressive_joint_name
+        self.expressive_link_name = expressive_link_name
+
 
         # Values to store for each trajectory.
         self.trajectories = []
@@ -163,14 +166,16 @@ class AMPLoader:
         self.expressive_root_vel = self.preloaded_s[:,:,self.expressive_root_vel_index][traj_idxs, 0,:]
         
         # Select expressive joint pos
-        expressive_joint_pos_fields = [key+"_dof_pos" for key in expressive_joint_name]
-        self.expressive_joint_pos_index = [self.trajectory_fields.index(key) for key in expressive_joint_pos_fields] 
-        self.expressive_joint_pos = self.preloaded_s[:,:,self.expressive_joint_pos_index][traj_idxs, 0,:]
+        if expressive_joint_name is not None:
+            expressive_joint_pos_fields = [key+"_dof_pos" for key in expressive_joint_name]
+            self.expressive_joint_pos_index = [self.trajectory_fields.index(key) for key in expressive_joint_pos_fields] 
+            self.expressive_joint_pos = self.preloaded_s[:,:,self.expressive_joint_pos_index][traj_idxs, 0,:]
 
         # Select expressive link pos
-        expressive_link_pos_fields = [key1 + key2 for key1 in expressive_link_name for key2 in ["_x", "_y", "_z"]]
-        self.expressive_link_pos_index = [self.trajectory_fields.index(key) for key in expressive_link_pos_fields] 
-        self.expressive_link_pos = self.preloaded_s[:,:,self.expressive_link_pos_index][traj_idxs, 0,:]
+        if expressive_link_name is not None:
+            expressive_link_pos_fields = [key1 + key2 for key1 in expressive_link_name for key2 in ["_x", "_y", "_z"]]
+            self.expressive_link_pos_index = [self.trajectory_fields.index(key) for key in expressive_link_pos_fields] 
+            self.expressive_link_pos = self.preloaded_s[:,:,self.expressive_link_pos_index][traj_idxs, 0,:]
 
         # Select fields
         #print(f"[Dataset Info] The SELECTED trajectory fields are: {self.style_fields}")
@@ -289,8 +294,10 @@ class AMPLoader:
             s_next = self.selected_preloaded_s_next[traj_idxs, frame_idx, :]
             #import pdb;pdb.set_trace()
             self.expressive_root_vel = self.preloaded_s[:,:,self.expressive_root_vel_index][traj_idxs, frame_idx,:]
-            self.expressive_joint_pos = self.preloaded_s[:,:,self.expressive_joint_pos_index][traj_idxs, frame_idx,:]
-            self.expressive_link_pos = self.preloaded_s[:,:,self.expressive_link_pos_index][traj_idxs, frame_idx,:]
+            if self.expressive_joint_name is not None:
+                self.expressive_joint_pos = self.preloaded_s[:,:,self.expressive_joint_pos_index][traj_idxs, frame_idx,:]
+            if self.expressive_link_name is not None:
+                self.expressive_link_pos = self.preloaded_s[:,:,self.expressive_link_pos_index][traj_idxs, frame_idx,:]
             
             yield torch.cat((s, s_next), dim=-1)
 
