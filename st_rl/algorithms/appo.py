@@ -74,12 +74,9 @@ class APPOAlgoMixin:
 
         return return_
 
-    def process_env_step(self, rewards, dones, infos, amp_obs, next_amp_obs):
+    def process_env_step(self, rewards, dones, infos, amp_obs):
         # get amp policy data
-        self.transition.amp_policy = torch.cat(
-            (amp_obs.clone(), next_amp_obs.clone()), dim=-1
-        )
-
+        self.transition.amp_policy = amp_obs.clone()
         # get amp expert data
         self.transition.amp_expert = self.expert_obs_generator.__next__()
         return_ = super().process_env_step(rewards, dones, infos)
@@ -128,7 +125,7 @@ class APPOAlgoMixin:
                     policy_d, -1 * torch.ones(policy_d.size(), device=self.device)
                 )
                 amp_loss = 0.5 * (expert_loss + policy_loss)
-                grad_pen_loss = self.actor_critic.discriminator.compute_grad_pen(expert_state)
+                grad_pen_loss = self.actor_critic.discriminator.compute_grad_pen(expert_state) # expert_state was normalized first
                 losses["discriminator_loss"] = amp_loss + grad_pen_loss
 
                 if self.amp_normalizer is not None:

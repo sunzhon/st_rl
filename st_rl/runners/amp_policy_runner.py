@@ -52,7 +52,7 @@ class AmpPolicyRunner(OnPolicyRunner):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        if hasattr(self.alg_cfg, "amp_data"):
+        if self.alg_cfg.get("amp_data") is not None:
             if self.alg_cfg["amp_data"]["init_dof_state_fields"] is not None:
                 self.env.unwrapped.scene["robot"].data.demo_init_states = self.alg.amp_data.init_states
             if self.alg_cfg["amp_data"]["init_root_state_fields"] is not None:
@@ -62,7 +62,7 @@ class AmpPolicyRunner(OnPolicyRunner):
             if self.alg_cfg["amp_data"]["expressive_link_name"] is not None:
                 self.env.unwrapped.scene["robot"].data.demo_expressive_link_pos = self.alg.amp_data.expressive_link_pos
     
-    def rollout_step(self, obs, critic_obs, amp_obs):
+    def rollout_step(self, obs, critic_obs):
         # get actions from policy
         actions = self.alg.act(obs, critic_obs)
 
@@ -79,17 +79,16 @@ class AmpPolicyRunner(OnPolicyRunner):
             critic_obs = obs
 
         # process discriminator rewards
-        if "amp_discriminator" in self.policy_cfg:
-            next_amp_obs = infos["observations"]["amp_policy"]
-            next_amp_obs = next_amp_obs.to(self.device)
+        if self.policy_cfg.get("amp_discriminator") is not None:
+            amp_obs = infos["observations"]["amp_policy"]
             amp_obs = amp_obs.to(self.device)
-            style_reward, rewards = self.alg.actor_critic.discriminator.predict_style_reward(amp_obs, next_amp_obs, rewards, self.alg.amp_normalizer, self.device)
+            style_reward, rewards = self.alg.actor_critic.discriminator.predict_style_reward(amp_obs, rewards, self.alg.amp_normalizer, self.device)
             infos["log"]["Episode_Reward/style_reward"] = style_reward.mean().item()
             infos["log"]["Episode_Reward/task_reward"] = rewards.mean().item()
         else:
             print("Please define amp_discriminator")
 
-        if "amp_data" in self.alg_cfg:
+        if self.alg_cfg.get("amp_data") is not None:
             if self.alg_cfg["amp_data"]["init_root_state_fields"] is not None:
                 self.env.unwrapped.scene["robot"].data.demo_expressive_root_vel = self.alg.amp_data.expressive_root_vel
             if self.alg_cfg["amp_data"]["expressive_joint_name"] is not None:
@@ -98,10 +97,9 @@ class AmpPolicyRunner(OnPolicyRunner):
                 self.env.unwrapped.scene["robot"].data.demo_expressive_link_pos = self.alg.amp_data.expressive_link_pos
 
         # process the step
-        self.alg.process_env_step(rewards, dones, infos, amp_obs, next_amp_obs)
-        amp_obs = torch.clone(next_amp_obs)
+        self.alg.process_env_step(rewards, dones, infos, amp_obs)
 
-        return obs, critic_obs, rewards, dones, infos, amp_obs
+        return obs, critic_obs, rewards, dones, infos
 
 
 
@@ -114,10 +112,10 @@ class AmpPolicyRunner(OnPolicyRunner):
         obs, extras = self.env.get_observations()
         critic_obs = extras["observations"].get("critic", obs)
         obs, critic_obs = obs.to(self.device), critic_obs.to(self.device)
-        if "amp_policy" in extras["observations"]:
-            amp_obs = extras["observations"].get("amp_policy",obs)
-        else:
-            amp_obs=None
+        #if "amp_policy" in extras["observations"]:
+        #    amp_obs = extras["observations"].get("amp_policy",obs)
+        #else:
+        #    amp_obs=None
 
         # switch to training mode
         self.train_mode()  # switch to train mode (for dropout for example)
@@ -142,7 +140,7 @@ class AmpPolicyRunner(OnPolicyRunner):
                 self.alg.expert_obs_generator = self.alg.amp_data.expert_obs_generator()
                 # data collection
                 for i in range(self.num_steps_per_env):
-                    obs, critic_obs, rewards, dones, infos, amp_obs = self.rollout_step(obs, critic_obs, amp_obs)
+                    obs, critic_obs, rewards, dones, infos = self.rollout_step(obs, critic_obs)
                     if self.log_dir is not None:
                         # Book keeping
                         if "episode" in infos:
@@ -199,6 +197,4 @@ class AmpPolicyRunner(OnPolicyRunner):
         self.save(os.path.join(self.log_dir, 'model_{}.pt'.format(self.current_learning_iteration)))
 
         return self.metrics_velrmsd, self.metrics_CoT
-
-
 
