@@ -33,6 +33,7 @@ class AMPLoader:
         expressive_joint_name=None,
         expressive_link_name=None,
         random_start = False,
+        amp_obs_history_length=0, # 0 mean no history, only current frame 
         **kwargs,
     ):
         """
@@ -59,6 +60,7 @@ class AMPLoader:
         self.expressive_joint_name = expressive_joint_name
         self.expressive_link_name = expressive_link_name
 
+        self.amp_obs_history_length=amp_obs_history_length
 
         # Values to store for each trajectory.
         self.trajectories = []
@@ -89,7 +91,7 @@ class AMPLoader:
                 print(f"[Dataset Info] Load {motion_file}")
                 print(f"[Dataset Info] It has {motion_data.shape[0]} frames.")
                 motion_data = motion_data[frame_begin:frame_end, :]
-                print(f"[Dataset Info] Select {motion_data.shape[0]} frames.")
+                print(f"[Dataset Info] Select {motion_data.shape[0]} frames from frame_begin is {frame_begin} and frame_end is {frame_end}.")
                 #print(f"[Dataset Info] Re-ordered trajectory fields: {self.style_fields}")
 
                 # Normalize and standardize quaternions.
@@ -141,8 +143,7 @@ class AMPLoader:
         traj_idxs = self.weighted_traj_idx_sample_batch(size=self.augment_trajectory_num)
         self.preloaded_s, self.preloaded_s_next = [], []
         for traj_idx in traj_idxs:
-            times = self.traj_time_sample_batch(traj_idx, size=self.augment_frame_num)
-            #import pdb;pdb.set_trace()
+            times = self.traj_time_sample_batch(traj_idx, size=self.augment_frame_num + self.amp_obs_history_length)
             s, s_next = [], []
             for frame_time in times:
                 s.append(self.sw_quat(self.get_frame_at_time(traj_idx, frame_time)))
@@ -159,23 +160,23 @@ class AMPLoader:
         init_state_fields_index = [self.trajectory_fields.index(key) for key in init_root_state_fields]
         init_dof_pos_index = [self.trajectory_fields.index(key) for key in [key+"_dof_pos" for key in init_dof_state_fields]]
         init_dof_vel_index = [self.trajectory_fields.index(key) for key in [key+"_dof_vel" for key in init_dof_state_fields]]
-        self.init_states = self.preloaded_s[:,0, init_state_fields_index + init_dof_pos_index + init_dof_vel_index]
+        self.init_states = self.preloaded_s[:,self.amp_obs_history_length, init_state_fields_index + init_dof_pos_index + init_dof_vel_index] # amp_obs_history_length is the start frame
         
         # Select root velocity
         self.expressive_root_vel_index = [self.trajectory_fields.index(key) for key in ["root_vel_x", "root_vel_y","root_ang_vel_z"]]
-        self.expressive_root_vel = self.preloaded_s[:,:,self.expressive_root_vel_index][traj_idxs, 0,:]
+        self.expressive_root_vel = self.preloaded_s[:,:,self.expressive_root_vel_index][traj_idxs, self.amp_obs_history_length,:]
         
         # Select expressive joint pos
         if expressive_joint_name is not None:
             expressive_joint_pos_fields = [key+"_dof_pos" for key in expressive_joint_name]
             self.expressive_joint_pos_index = [self.trajectory_fields.index(key) for key in expressive_joint_pos_fields] 
-            self.expressive_joint_pos = self.preloaded_s[:,:,self.expressive_joint_pos_index][traj_idxs, 0,:]
+            self.expressive_joint_pos = self.preloaded_s[:,:,self.expressive_joint_pos_index][traj_idxs, self.amp_obs_history_length,:]
 
         # Select expressive link pos
         if expressive_link_name is not None:
             expressive_link_pos_fields = [key1 + key2 for key1 in expressive_link_name for key2 in ["_x", "_y", "_z"]]
             self.expressive_link_pos_index = [self.trajectory_fields.index(key) for key in expressive_link_pos_fields] 
-            self.expressive_link_pos = self.preloaded_s[:,:,self.expressive_link_pos_index][traj_idxs, 0,:]
+            self.expressive_link_pos = self.preloaded_s[:,:,self.expressive_link_pos_index][traj_idxs, self.amp_obs_history_length,:]
 
         # Select fields
         #print(f"[Dataset Info] The SELECTED trajectory fields are: {self.style_fields}")
@@ -184,8 +185,8 @@ class AMPLoader:
         self.selected_preloaded_s = self.preloaded_s[:,:,reorder_field_index]
         self.selected_preloaded_s_next = self.preloaded_s_next[:,:,reorder_field_index]
     
-        print(f"[Dataset Info] self.preloaded_s dim are {len(self.preloaded_s)} and {self.preloaded_s[0].shape}")
-        print(f" Trajectory number: {len(self.trajectory_idxs)}")
+        print(f"[Dataset Info] self.preloaded_s dim are {len(self.preloaded_s)} and {self.preloaded_s[0].shape} in which augment_frame_num: {self.augment_frame_num} and amp_obs_history_leng: {self.amp_obs_history_length}")
+        print(f"[Dataset Info] Trajectory number: {len(self.trajectory_idxs)}")
 
     def weighted_traj_idx_sample(self):
         """Get traj idx via weighted sampling."""
@@ -211,8 +212,8 @@ class AMPLoader:
             time_samples = (self.trajectory_lens[traj_idx] * np.random.uniform(size=int(size))- subst)
         else:
             if self.random_start:
-                random_start_threshold = 1-size/(1+self.trajectories[traj_idx].shape[0])
                 #NOTE: data frame num must be large than 2*num_steps_per_env
+                random_start_threshold = 1-size/(1+self.trajectories[traj_idx].shape[0])
                 start_time = np.random.uniform(high=random_start_threshold, size=1)*self.trajectory_lens[traj_idx]
             else:
                 start_time = 0.0
@@ -290,16 +291,14 @@ class AMPLoader:
             traj_idxs = np.arange(self.selected_preloaded_s.shape[0])
 
         for frame_idx in range(self.augment_frame_num):
-            s = self.selected_preloaded_s[traj_idxs, frame_idx, :]  # differet trajectories and frame times
-            s_next = self.selected_preloaded_s_next[traj_idxs, frame_idx, :]
-            #import pdb;pdb.set_trace()
-            self.expressive_root_vel = self.preloaded_s[:,:,self.expressive_root_vel_index][traj_idxs, frame_idx,:]
+            s_f = self.selected_preloaded_s[traj_idxs, frame_idx:frame_idx+self.amp_obs_history_length+1, :]  # differet trajectories and frame times
+            self.expressive_root_vel = self.preloaded_s[:,:,self.expressive_root_vel_index][traj_idxs, frame_idx+self.amp_obs_history_length,:]
             if self.expressive_joint_name is not None:
-                self.expressive_joint_pos = self.preloaded_s[:,:,self.expressive_joint_pos_index][traj_idxs, frame_idx,:]
+                self.expressive_joint_pos = self.preloaded_s[:,:,self.expressive_joint_pos_index][traj_idxs, frame_idx+self.amp_obs_history_length,:]
             if self.expressive_link_name is not None:
-                self.expressive_link_pos = self.preloaded_s[:,:,self.expressive_link_pos_index][traj_idxs, frame_idx,:]
+                self.expressive_link_pos = self.preloaded_s[:,:,self.expressive_link_pos_index][traj_idxs, frame_idx+self.amp_obs_history_length,:]
             
-            yield torch.cat((s, s_next), dim=-1)
+            yield s_f.flatten(1,2)
 
     def sw_quat(self, frame_data):
         # switch root-rot quaternion from xyzw to wxyz
