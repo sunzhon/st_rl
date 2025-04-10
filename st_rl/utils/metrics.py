@@ -37,6 +37,8 @@ class StRlMetricEnvWrapper(RslRlVecEnvWrapper):
         asset_cfg = SceneEntityCfg("robot")
         asset = self.unwrapped.scene[asset_cfg.name]
         self.data = asset.data
+        self.contact_sensor: ContactSensor = self.unwrapped.scene["feet_contact_forces"]
+
         self.joint_names = self.unwrapped.scene["robot"].joint_names
         self.default_body_mass = torch.sum(self.data.default_mass, dim=1).to(self.device)
         self.payloads = torch.zeros_like(self.default_body_mass)
@@ -155,14 +157,13 @@ class StRlMetricEnvWrapper(RslRlVecEnvWrapper):
             states[f'{self.joint_names[idx]}_vel'] = self.dof_vel[robot_index, idx].item()
             states[f'{self.joint_names[idx]}_tau'] = self.dof_torque[robot_index, idx].item()
 
-        """
-        # Log contact forces
-        for idx in range(len(self.feet_indices)):
-            states[f'grf_x_{idx}'] = self.contact_forces[robot_index, self.feet_indices[idx], 0].item()
-            states[f'grf_y_{idx}'] = self.contact_forces[robot_index, self.feet_indices[idx], 1].item()
-            states[f'grf_z_{idx}'] = self.contact_forces[robot_index, self.feet_indices[idx], 2].item()
         
-        """
+        # Log contact forces
+        grf = self.contact_sensor.data.net_forces_w_history.mean(dim=1)
+        for idx in range(grf.shape[1]):
+            states[f'grf_x_{idx}'] = grf[:,idx,0].item()
+            states[f'grf_y_{idx}'] = grf[:,idx,1].item()
+            states[f'grf_z_{idx}'] = grf[:,idx,2].item()
 
         self.logger.update_states(states)
 
