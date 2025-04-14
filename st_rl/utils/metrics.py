@@ -37,7 +37,8 @@ class StRlMetricEnvWrapper(RslRlVecEnvWrapper):
         asset_cfg = SceneEntityCfg("robot")
         asset = self.unwrapped.scene[asset_cfg.name]
         self.data = asset.data
-        self.contact_sensor: ContactSensor = self.unwrapped.scene["feet_contact_forces"]
+        if "feet_contact_forces" in self.unwrapped.scene.keys():
+            self.contact_sensor: ContactSensor = self.unwrapped.scene["feet_contact_forces"]
 
         self.joint_names = self.unwrapped.scene["robot"].joint_names
         self.default_body_mass = torch.sum(self.data.default_mass, dim=1).to(self.device)
