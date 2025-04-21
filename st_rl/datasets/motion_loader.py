@@ -128,7 +128,7 @@ class AMPLoader:
             self.augment_frame_num = min(self.trajectory_num_frames)
         else:
             self.augment_frame_num = augment_frame_num
-        assert self.augment_frame_num <= min(self.trajectory_num_frames), f"required frame num  should less than the loaded trajtectory frame number"
+        assert self.augment_frame_num <= min(self.trajectory_num_frames), f"required frame num  {self.augment_frame_num} should less than the loaded trajtectory frame number {self.trajectory_num_frames}"
         if augment_trajectory_num is None:
             self.augment_trajectory_num = self.num_motions
         else:
