@@ -375,7 +375,7 @@ class OnPolicyRunner:
         if self.logger_type in ["neptune", "wandb"]:
             self.writer.save_model(path, self.current_learning_iteration)
 
-    def load(self, path, load_optimizer=True,map_location=None):
+    def load(self, path, load_optimizer=True, map_location=None):
         loaded_dict = torch.load(path,map_location=map_location)
         if self.cfg.get("ckpt_manipulator", False):
             # suppose to be a string specifying which function to use

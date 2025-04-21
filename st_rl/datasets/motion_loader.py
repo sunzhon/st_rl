@@ -33,7 +33,7 @@ class AMPLoader:
         expressive_joint_name=None,
         expressive_link_name=None,
         random_start = False,
-        amp_obs_history_length=0, # 0 mean no history, only current frame 
+        amp_obs_history_length=1, # 1 mean no history, only current frame 
         **kwargs,
     ):
         """
@@ -291,15 +291,15 @@ class AMPLoader:
             traj_idxs = np.arange(self.selected_preloaded_s.shape[0])
 
         for frame_idx in range(self.augment_frame_num):
-            s_f = self.selected_preloaded_s[traj_idxs, frame_idx:frame_idx+self.amp_obs_history_length+1, :]  # differet trajectories and frame times
-            #import pdb;pdb.set_trace()
+            s_f = self.selected_preloaded_s[traj_idxs, frame_idx:frame_idx+self.amp_obs_history_length, :]  # differet trajectories and frame times
             self.expressive_root_vel = self.preloaded_s[:,:,self.expressive_root_vel_index][traj_idxs, frame_idx+self.amp_obs_history_length,:]
             if self.expressive_joint_name is not None:
                 self.expressive_joint_pos = self.preloaded_s[:,:,self.expressive_joint_pos_index][traj_idxs, frame_idx+self.amp_obs_history_length,:]
             if self.expressive_link_name is not None:
                 self.expressive_link_pos = self.preloaded_s[:,:,self.expressive_link_pos_index][traj_idxs, frame_idx+self.amp_obs_history_length,:]
             
-            yield s_f.reshape(s_f.shape[0],-1)
+            #yield s_f.reshape(s_f.shape[0],-1)
+            yield s_f.flatten(1,2)
 
     def sw_quat(self, frame_data):
         # switch root-rot quaternion from xyzw to wxyz

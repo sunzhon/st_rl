@@ -19,7 +19,9 @@ setup(name='st_rl',
             "pybullet==3.2.7",
             "neptune>=1.13.0",
             "neptune-optuna>=1.4.1",
-            "optuna==3.1.0",
-            "optuna-dashboard>=0.17.0"
+            #"optuna==3.1.0",
+            "optuna",
+            "#optuna-dashboard>=0.17.0"
+            "optuna-dashboard"
       ],
       )
