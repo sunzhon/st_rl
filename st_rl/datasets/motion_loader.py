@@ -33,7 +33,7 @@ class AMPLoader:
         expressive_joint_name=None,
         expressive_link_name=None,
         random_start = False,
-        amp_obs_history_length=1, # 1 mean no history, only current frame 
+        amp_obs_frame_num=1, # 1 mean no history, only current frame 
         **kwargs,
     ):
         """
@@ -60,7 +60,7 @@ class AMPLoader:
         self.expressive_joint_name = expressive_joint_name
         self.expressive_link_name = expressive_link_name
 
-        self.amp_obs_history_length=amp_obs_history_length
+        self.amp_obs_frame_num = amp_obs_frame_num
 
         # Values to store for each trajectory.
         self.trajectories = []
@@ -143,7 +143,7 @@ class AMPLoader:
         traj_idxs = self.weighted_traj_idx_sample_batch(size=self.augment_trajectory_num)
         self.preloaded_s, self.preloaded_s_next = [], []
         for traj_idx in traj_idxs:
-            times = self.traj_time_sample_batch(traj_idx, size=self.augment_frame_num + self.amp_obs_history_length)
+            times = self.traj_time_sample_batch(traj_idx, size=self.augment_frame_num + self.amp_obs_frame_num)
             s, s_next = [], []
             for frame_time in times:
                 s.append(self.sw_quat(self.get_frame_at_time(traj_idx, frame_time)))
@@ -160,23 +160,23 @@ class AMPLoader:
         init_state_fields_index = [self.trajectory_fields.index(key) for key in init_root_state_fields]
         init_dof_pos_index = [self.trajectory_fields.index(key) for key in [key+"_dof_pos" for key in init_dof_state_fields]]
         init_dof_vel_index = [self.trajectory_fields.index(key) for key in [key+"_dof_vel" for key in init_dof_state_fields]]
-        self.init_states = self.preloaded_s[:,self.amp_obs_history_length, init_state_fields_index + init_dof_pos_index + init_dof_vel_index] # amp_obs_history_length is the start frame
+        self.init_states = self.preloaded_s[:,self.amp_obs_frame_num, init_state_fields_index + init_dof_pos_index + init_dof_vel_index] # amp_obs_frame_num is the start frame
         
         # Select root velocity
         self.expressive_root_vel_index = [self.trajectory_fields.index(key) for key in ["root_vel_x", "root_vel_y","root_ang_vel_z"]]
-        self.expressive_root_vel = self.preloaded_s[:,:,self.expressive_root_vel_index][traj_idxs, self.amp_obs_history_length,:]
+        self.expressive_root_vel = self.preloaded_s[:,:,self.expressive_root_vel_index][traj_idxs, self.amp_obs_frame_num,:]
         
         # Select expressive joint pos
         if expressive_joint_name is not None:
             expressive_joint_pos_fields = [key+"_dof_pos" for key in expressive_joint_name]
             self.expressive_joint_pos_index = [self.trajectory_fields.index(key) for key in expressive_joint_pos_fields] 
-            self.expressive_joint_pos = self.preloaded_s[:,:,self.expressive_joint_pos_index][traj_idxs, self.amp_obs_history_length,:]
+            self.expressive_joint_pos = self.preloaded_s[:,:,self.expressive_joint_pos_index][traj_idxs, self.amp_obs_frame_num,:]
 
         # Select expressive link pos
         if expressive_link_name is not None:
             expressive_link_pos_fields = [key1 + key2 for key1 in expressive_link_name for key2 in ["_x", "_y", "_z"]]
             self.expressive_link_pos_index = [self.trajectory_fields.index(key) for key in expressive_link_pos_fields] 
-            self.expressive_link_pos = self.preloaded_s[:,:,self.expressive_link_pos_index][traj_idxs, self.amp_obs_history_length,:]
+            self.expressive_link_pos = self.preloaded_s[:,:,self.expressive_link_pos_index][traj_idxs, self.amp_obs_frame_num,:]
 
         # Select fields
         #print(f"[Dataset Info] The SELECTED trajectory fields are: {self.style_fields}")
@@ -185,7 +185,7 @@ class AMPLoader:
         self.selected_preloaded_s = self.preloaded_s[:,:,reorder_field_index]
         self.selected_preloaded_s_next = self.preloaded_s_next[:,:,reorder_field_index]
     
-        print(f"[Dataset Info] self.preloaded_s dim are {len(self.preloaded_s)} and {self.preloaded_s[0].shape} in which augment_frame_num: {self.augment_frame_num} and amp_obs_history_leng: {self.amp_obs_history_length}")
+        print(f"[Dataset Info] self.preloaded_s dim are {len(self.preloaded_s)} and {self.preloaded_s[0].shape} in which augment_frame_num: {self.augment_frame_num} and amp_obs_history_leng: {self.amp_obs_frame_num}")
         print(f"[Dataset Info] Trajectory number: {len(self.trajectory_idxs)}")
 
     def weighted_traj_idx_sample(self):
@@ -291,12 +291,12 @@ class AMPLoader:
             traj_idxs = np.arange(self.selected_preloaded_s.shape[0])
 
         for frame_idx in range(self.augment_frame_num):
-            s_f = self.selected_preloaded_s[traj_idxs, frame_idx:frame_idx+self.amp_obs_history_length, :]  # differet trajectories and frame times
-            self.expressive_root_vel = self.preloaded_s[:,:,self.expressive_root_vel_index][traj_idxs, frame_idx+self.amp_obs_history_length,:]
+            s_f = self.selected_preloaded_s[traj_idxs, frame_idx:frame_idx+self.amp_obs_frame_num, :]  # differet trajectories and frame times
+            self.expressive_root_vel = self.preloaded_s[:,:,self.expressive_root_vel_index][traj_idxs, frame_idx+self.amp_obs_frame_num,:]
             if self.expressive_joint_name is not None:
-                self.expressive_joint_pos = self.preloaded_s[:,:,self.expressive_joint_pos_index][traj_idxs, frame_idx+self.amp_obs_history_length,:]
+                self.expressive_joint_pos = self.preloaded_s[:,:,self.expressive_joint_pos_index][traj_idxs, frame_idx+self.amp_obs_frame_num,:]
             if self.expressive_link_name is not None:
-                self.expressive_link_pos = self.preloaded_s[:,:,self.expressive_link_pos_index][traj_idxs, frame_idx+self.amp_obs_history_length,:]
+                self.expressive_link_pos = self.preloaded_s[:,:,self.expressive_link_pos_index][traj_idxs, frame_idx+self.amp_obs_frame_num,:]
             
             #yield s_f.reshape(s_f.shape[0],-1)
             yield s_f.flatten(1,2)
