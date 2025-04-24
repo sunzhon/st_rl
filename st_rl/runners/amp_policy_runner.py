@@ -53,14 +53,25 @@ class AmpPolicyRunner(OnPolicyRunner):
         super().__init__(*args, **kwargs)
 
         if self.alg_cfg.get("amp_data") is not None:
-            if self.alg_cfg["amp_data"]["init_dof_state_fields"] is not None:
+            # for env initialization
+            if self.alg_cfg["amp_data"]["init_state_fields"] is not None:
                 self.env.unwrapped.scene["robot"].data.demo_init_states = self.alg.amp_data.init_states
-            if self.alg_cfg["amp_data"]["init_root_state_fields"] is not None:
-                self.env.unwrapped.scene["robot"].data.demo_expressive_root_vel = self.alg.amp_data.expressive_root_vel
+
+            # for amp goal/commands
+            if self.alg_cfg["amp_data"]["style_goal_fields"] is not None:
+                self.env.unwrapped.scene["robot"].data.style_goal = self.alg.amp_data.style_goal
+
+            # for expressive goal/commands
+            if self.alg_cfg["amp_data"]["expressive_goal_fields"] is not None:
+                self.env.unwrapped.scene["robot"].data.expressive_goal = self.alg.amp_data.expressive_goal
+            
+            # for tracking expressive joint fields
             if self.alg_cfg["amp_data"]["expressive_joint_name"] is not None:
-                self.env.unwrapped.scene["robot"].data.demo_expressive_joint_pos = self.alg.amp_data.expressive_joint_pos
+                self.env.unwrapped.scene["robot"].data.expressive_tracking_joint_pos = self.alg.amp_data.expressive_joint_pos
+
+            # for tracking expressive link fields
             if self.alg_cfg["amp_data"]["expressive_link_name"] is not None:
-                self.env.unwrapped.scene["robot"].data.demo_expressive_link_pos = self.alg.amp_data.expressive_link_pos
+                self.env.unwrapped.scene["robot"].data.expressive_tracking_link_pos = self.alg.amp_data.expressive_link_pos
     
     def rollout_step(self, obs, critic_obs):
         # get actions from policy
@@ -80,8 +91,8 @@ class AmpPolicyRunner(OnPolicyRunner):
 
         # process discriminator rewards
         if self.policy_cfg.get("amp_discriminator") is not None:
-            amp_obs = infos["observations"]["amp_policy"]
-            amp_obs = amp_obs.to(self.device)
+            amp_obs = infos["observations"]["amp_policy"] # env_num, history_len, field_num
+            amp_obs = amp_obs.reshape(amp_obs.shape[0],-1).to(self.device)
             style_reward, task_reward, rewards = self.alg.actor_critic.discriminator.predict_style_reward(amp_obs, rewards, self.alg.amp_normalizer, self.device)
             infos["log"]["Episode_Reward/style_reward"] = style_reward.mean().item()
             infos["log"]["Episode_Reward/task_reward"] = task_reward.mean().item()
@@ -89,16 +100,24 @@ class AmpPolicyRunner(OnPolicyRunner):
         else:
             print("Please define amp_discriminator")
 
-        if self.alg_cfg.get("amp_data") is not None:
-            if self.alg_cfg["amp_data"]["init_root_state_fields"] is not None:
-                self.env.unwrapped.scene["robot"].data.demo_expressive_root_vel = self.alg.amp_data.expressive_root_vel
-            if self.alg_cfg["amp_data"]["expressive_joint_name"] is not None:
-                self.env.unwrapped.scene["robot"].data.demo_expressive_joint_pos = self.alg.amp_data.expressive_joint_pos
-            if self.alg_cfg["amp_data"]["expressive_link_name"] is not None:
-                self.env.unwrapped.scene["robot"].data.demo_expressive_link_pos = self.alg.amp_data.expressive_link_pos
-
         # process the step
         self.alg.process_env_step(rewards, dones, infos, amp_obs)
+
+        # update style/expressive goals and tracking values from the above __nex__() in process_env_step()
+        if self.alg_cfg.get("amp_data") is not None:
+            # for amp goal/commands
+            if self.alg_cfg["amp_data"]["style_goal_fields"] is not None:
+                self.env.unwrapped.scene["robot"].data.style_goal = self.alg.amp_data.style_goal
+            # for expressive goal/commands
+            if self.alg_cfg["amp_data"]["expressive_goal_fields"] is not None:
+                self.env.unwrapped.scene["robot"].data.expressive_goal = self.alg.amp_data.expressive_goal
+            # for tracking expressive pos fields
+            if self.alg_cfg["amp_data"]["expressive_joint_name"] is not None:
+                self.env.unwrapped.scene["robot"].data.expressive_tracking_joint_pos = self.alg.amp_data.expressive_joint_pos
+            # for tracking expressive link fields
+            if self.alg_cfg["amp_data"]["expressive_link_name"] is not None:
+                self.env.unwrapped.scene["robot"].data.expressive_tracking_link_pos = self.alg.amp_data.expressive_link_pos
+
 
         return obs, critic_obs, rewards, dones, infos
 
@@ -141,6 +160,7 @@ class AmpPolicyRunner(OnPolicyRunner):
                 self.alg.expert_obs_generator = self.alg.amp_data.expert_obs_generator()
                 # data collection
                 for i in range(self.num_steps_per_env):
+                    import pdb;pdb.set_trace()
                     obs, critic_obs, rewards, dones, infos = self.rollout_step(obs, critic_obs)
                     if self.log_dir is not None:
                         # Book keeping

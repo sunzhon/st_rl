@@ -20,6 +20,7 @@ class AMPLoader:
             os.getenv("HOME")
             + "/workspace/kepler_ws/KeplerRobot/datasets/motion_files/*"
         ),
+        style_goal_fields=None,
         style_fields=None,
         switch_quaternion=False,
         shuffle=False,
@@ -28,8 +29,9 @@ class AMPLoader:
         frame_end=None,
         augment_trajectory_num=None,
         augment_frame_num=None,
-        init_root_state_fields=None,
-        init_dof_state_fields=None,
+        init_state_fields=None,
+        expressive_goal_fields=None,
+        expressive_root_fields=None,
         expressive_joint_name=None,
         expressive_link_name=None,
         random_start = False,
@@ -156,27 +158,34 @@ class AMPLoader:
 
 
         # Select init state and necessary fields
-        assert set(init_root_state_fields).issubset(set(self.trajectory_fields)), f"The arguments field {init_root_state_fields} should have same elements with the dataset fields {self.trajectory_fields} in {motion_file}"
-        init_state_fields_index = [self.trajectory_fields.index(key) for key in init_root_state_fields]
-        init_dof_pos_index = [self.trajectory_fields.index(key) for key in [key+"_dof_pos" for key in init_dof_state_fields]]
-        init_dof_vel_index = [self.trajectory_fields.index(key) for key in [key+"_dof_vel" for key in init_dof_state_fields]]
-        self.init_states = self.preloaded_s[:,self.amp_obs_frame_num, init_state_fields_index + init_dof_pos_index + init_dof_vel_index] # amp_obs_frame_num is the start frame
+        assert set(init_state_fields).issubset(set(self.trajectory_fields)), f"The arguments field {init_state_fields} should have same elements with the dataset fields {self.trajectory_fields} in {motion_file}"
+        init_state_fields_index = [self.trajectory_fields.index(key) for key in init_state_fields]
+        self.init_states = self.preloaded_s[:,0, init_state_fields_index] # amp_obs_frame_num is the start frame
         
         # Select root velocity
-        self.expressive_root_vel_index = [self.trajectory_fields.index(key) for key in ["root_vel_x", "root_vel_y","root_ang_vel_z"]]
-        self.expressive_root_vel = self.preloaded_s[:,:,self.expressive_root_vel_index][traj_idxs, self.amp_obs_frame_num,:]
+        if style_goal_fields is not None:
+            self.style_goal_index = [self.trajectory_fields.index(key) for key in style_goal_fields]
+            self.style_goal = self.preloaded_s[:,:,self.style_goal_index][traj_idxs, 0,:] # part of obs, which is inputs of polcy, to calculate action
+
+        if expressive_goal_fields is not None:
+            self.expressive_goal_index = [self.trajectory_fields.index(key) for key in expressive_goal_fields]
+            self.expressive_goal = self.preloaded_s[:,:,self.expressive_goal_index][traj_idxs, 0,:] #s_0 
+
+        if expressive_root_fields is not None:
+            self.expressive_root_vel_index = [self.trajectory_fields.index(key) for key in expressive_root_fields]
+            self.expressive_root_vel = self.preloaded_s[:,:,self.expressive_root_vel_index][traj_idxs, 0,:] #s_0
         
         # Select expressive joint pos
         if expressive_joint_name is not None:
             expressive_joint_pos_fields = [key+"_dof_pos" for key in expressive_joint_name]
             self.expressive_joint_pos_index = [self.trajectory_fields.index(key) for key in expressive_joint_pos_fields] 
-            self.expressive_joint_pos = self.preloaded_s[:,:,self.expressive_joint_pos_index][traj_idxs, self.amp_obs_frame_num,:]
+            self.expressive_joint_pos = self.preloaded_s[:,:,self.expressive_joint_pos_index][traj_idxs, 1,:] # s_1
 
         # Select expressive link pos
         if expressive_link_name is not None:
             expressive_link_pos_fields = [key1 + key2 for key1 in expressive_link_name for key2 in ["_x", "_y", "_z"]]
             self.expressive_link_pos_index = [self.trajectory_fields.index(key) for key in expressive_link_pos_fields] 
-            self.expressive_link_pos = self.preloaded_s[:,:,self.expressive_link_pos_index][traj_idxs, self.amp_obs_frame_num,:]
+            self.expressive_link_pos = self.preloaded_s[:,:,self.expressive_link_pos_index][traj_idxs, 1,:] # s_1, since the rewards calculated according to s_t+1
 
         # Select fields
         #print(f"[Dataset Info] The SELECTED trajectory fields are: {self.style_fields}")
@@ -291,15 +300,18 @@ class AMPLoader:
             traj_idxs = np.arange(self.selected_preloaded_s.shape[0])
 
         for frame_idx in range(self.augment_frame_num):
-            s_f = self.selected_preloaded_s[traj_idxs, frame_idx:frame_idx+self.amp_obs_frame_num, :]  # differet trajectories and frame times
-            self.expressive_root_vel = self.preloaded_s[:,:,self.expressive_root_vel_index][traj_idxs, frame_idx+self.amp_obs_frame_num,:]
+            amp_expert = self.selected_preloaded_s[traj_idxs, frame_idx:frame_idx+self.amp_obs_frame_num, :]  # differet trajectories and frame times
+            # get goal of style and expressive
+            self.style_goal = self.preloaded_s[:,:,self.style_goal_index][traj_idxs, frame_idx+1,:]
+            self.expressive_goal = self.preloaded_s[:,:,self.expressive_goal_index][traj_idxs, frame_idx+1,:]
+            # get expressive tracking
             if self.expressive_joint_name is not None:
-                self.expressive_joint_pos = self.preloaded_s[:,:,self.expressive_joint_pos_index][traj_idxs, frame_idx+self.amp_obs_frame_num,:]
+                self.expressive_joint_pos = self.preloaded_s[:,:,self.expressive_joint_pos_index][traj_idxs, frame_idx+2,:]
             if self.expressive_link_name is not None:
-                self.expressive_link_pos = self.preloaded_s[:,:,self.expressive_link_pos_index][traj_idxs, frame_idx+self.amp_obs_frame_num,:]
+                self.expressive_link_pos = self.preloaded_s[:,:,self.expressive_link_pos_index][traj_idxs, frame_idx+2,:]
             
             #yield s_f.reshape(s_f.shape[0],-1)
-            yield s_f.flatten(1,2)
+            yield amp_expert.flatten(1,2)
 
     def sw_quat(self, frame_data):
         # switch root-rot quaternion from xyzw to wxyz
