@@ -160,7 +160,6 @@ class AmpPolicyRunner(OnPolicyRunner):
                 self.alg.expert_obs_generator = self.alg.amp_data.expert_obs_generator()
                 # data collection
                 for i in range(self.num_steps_per_env):
-                    import pdb;pdb.set_trace()
                     obs, critic_obs, rewards, dones, infos = self.rollout_step(obs, critic_obs)
                     if self.log_dir is not None:
                         # Book keeping

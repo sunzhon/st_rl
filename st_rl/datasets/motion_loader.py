@@ -31,7 +31,6 @@ class AMPLoader:
         augment_frame_num=None,
         init_state_fields=None,
         expressive_goal_fields=None,
-        expressive_root_fields=None,
         expressive_joint_name=None,
         expressive_link_name=None,
         random_start = False,
@@ -56,6 +55,8 @@ class AMPLoader:
         self.shuffle = shuffle
 
         self.style_fields = style_fields
+        self.style_goal_fields = style_goal_fields
+        self.expressive_goal_fields = expressive_goal_fields
 
         self.random_start = random_start
 
@@ -171,10 +172,6 @@ class AMPLoader:
             self.expressive_goal_index = [self.trajectory_fields.index(key) for key in expressive_goal_fields]
             self.expressive_goal = self.preloaded_s[:,:,self.expressive_goal_index][traj_idxs, 0,:] #s_0 
 
-        if expressive_root_fields is not None:
-            self.expressive_root_vel_index = [self.trajectory_fields.index(key) for key in expressive_root_fields]
-            self.expressive_root_vel = self.preloaded_s[:,:,self.expressive_root_vel_index][traj_idxs, 0,:] #s_0
-        
         # Select expressive joint pos
         if expressive_joint_name is not None:
             expressive_joint_pos_fields = [key+"_dof_pos" for key in expressive_joint_name]
@@ -302,8 +299,10 @@ class AMPLoader:
         for frame_idx in range(self.augment_frame_num):
             amp_expert = self.selected_preloaded_s[traj_idxs, frame_idx:frame_idx+self.amp_obs_frame_num, :]  # differet trajectories and frame times
             # get goal of style and expressive
-            self.style_goal = self.preloaded_s[:,:,self.style_goal_index][traj_idxs, frame_idx+1,:]
-            self.expressive_goal = self.preloaded_s[:,:,self.expressive_goal_index][traj_idxs, frame_idx+1,:]
+            if self.style_goal_fields is not None:
+                self.style_goal = self.preloaded_s[:,:,self.style_goal_index][traj_idxs, frame_idx+1,:]
+            if self.expressive_goal_fields is not None:
+                self.expressive_goal = self.preloaded_s[:,:,self.expressive_goal_index][traj_idxs, frame_idx+1,:]
             # get expressive tracking
             if self.expressive_joint_name is not None:
                 self.expressive_joint_pos = self.preloaded_s[:,:,self.expressive_joint_pos_index][traj_idxs, frame_idx+2,:]
