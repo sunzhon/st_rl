@@ -162,6 +162,10 @@ class AMPLoader:
         assert set(init_state_fields).issubset(set(self.trajectory_fields)), f"The arguments field {init_state_fields} should have same elements with the dataset fields {self.trajectory_fields} in {motion_file}"
         init_state_fields_index = [self.trajectory_fields.index(key) for key in init_state_fields]
         self.init_states = self.preloaded_s[:,0, init_state_fields_index] # amp_obs_frame_num is the start frame
+
+
+        self.base_velocity_index = [self.trajectory_fields.index(key) for key in ["root_vel_x","root_vel_y","root_ang_vel_z"]]
+        self.base_velocity = self.preloaded_s[:,:,self.base_velocity_index][traj_idxs, 0,:] # part of obs, which is inputs of polcy, to calculate action
         
         # Select root velocity
         if style_goal_fields is not None:
@@ -298,6 +302,9 @@ class AMPLoader:
 
         for frame_idx in range(self.augment_frame_num):
             amp_expert = self.selected_preloaded_s[traj_idxs, frame_idx:frame_idx+self.amp_obs_frame_num, :]  # differet trajectories and frame times
+            
+            # get base velocity
+            self.base_velocity = self.preloaded_s[:,:,self.base_velocity_index][traj_idxs, frame_idx+1,:]
             # get goal of style and expressive
             if self.style_goal_fields is not None:
                 self.style_goal = self.preloaded_s[:,:,self.style_goal_index][traj_idxs, frame_idx+1,:]

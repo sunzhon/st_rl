@@ -53,6 +53,9 @@ class AmpPolicyRunner(OnPolicyRunner):
         super().__init__(*args, **kwargs)
 
         if self.alg_cfg.get("amp_data") is not None:
+            # base velocity should come from demo data if using imiattion learning
+            self.env.unwrapped.scene["robot"].data.demo_base_velocity= self.alg.amp_data.base_velocity
+
             # for env initialization
             if self.alg_cfg["amp_data"]["init_state_fields"] is not None:
                 self.env.unwrapped.scene["robot"].data.demo_init_states = self.alg.amp_data.init_states
@@ -105,6 +108,8 @@ class AmpPolicyRunner(OnPolicyRunner):
 
         # update style/expressive goals and tracking values from the above __nex__() in process_env_step()
         if self.alg_cfg.get("amp_data") is not None:
+            # base velocity should come from demo data if using imiattion learning
+            self.env.unwrapped.scene["robot"].data.demo_base_velocity= self.alg.amp_data.base_velocity
             # for amp goal/commands
             if self.alg_cfg["amp_data"]["style_goal_fields"] is not None:
                 self.env.unwrapped.scene["robot"].data.style_goal = self.alg.amp_data.style_goal
