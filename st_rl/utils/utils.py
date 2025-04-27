@@ -27,11 +27,18 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # Copyright (c) 2021 ETH Zurich, Nikita Rudin
+from __future__ import annotations
 
 from collections import OrderedDict
 import torch
 import numpy as np
 import os
+import git
+import pathlib
+
+import importlib
+import os
+from typing import Callable
 
 def split_and_pad_trajectories(tensor, dones):
     """ Splits trajectories at done indices. Then concatenates them and padds with zeros up to the length og the longest trajectory.
@@ -214,4 +221,30 @@ def store_code_state(logdir, repositories) -> list:
     return file_paths
 
 
+def string_to_callable(name: str) -> Callable:
+    """Resolves the module and function names to return the function.
 
+    Args:
+        name (str): The function name. The format should be 'module:attribute_name'.
+
+    Raises:
+        ValueError: When the resolved attribute is not a function.
+        ValueError: When unable to resolve the attribute.
+
+    Returns:
+        Callable: The function loaded from the module.
+    """
+    try:
+        mod_name, attr_name = name.split(":")
+        mod = importlib.import_module(mod_name)
+        callable_object = getattr(mod, attr_name)
+        # check if attribute is callable
+        if callable(callable_object):
+            return callable_object
+        else:
+            raise ValueError(f"The imported object is not callable: '{name}'")
+    except AttributeError as e:
+        msg = (
+            "We could not interpret the entry as a callable object. The format of input should be"
+            f" 'module:attribute_name'\nWhile processing input '{name}', received the error:\n {e}."
+        )
