@@ -128,9 +128,9 @@ class AMPLoader:
         # Preload transitions if specified
         print(f"[Dataset Info] Preloading data into self.preloaded_s")
         if augment_frame_num is None:
-            self.augment_frame_num = min(self.trajectory_num_frames)
+            self.augment_frame_num = int(min(self.trajectory_num_frames))
         else:
-            self.augment_frame_num = augment_frame_num
+            self.augment_frame_num = int(augment_frame_num)
         assert self.augment_frame_num <= min(self.trajectory_num_frames), f"required frame num  {self.augment_frame_num} should less than the loaded trajtectory frame number {self.trajectory_num_frames}"
         if augment_trajectory_num is None:
             self.augment_trajectory_num = self.num_motions
