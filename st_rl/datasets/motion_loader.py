@@ -126,7 +126,7 @@ class AMPLoader:
         self.trajectory_num_frames = np.array(self.trajectory_num_frames)
 
         # Preload transitions if specified
-        print(f"[Dataset Info] Preloading data into self.preloaded_s and self.preloaded_s_next")
+        print(f"[Dataset Info] Preloading data into self.preloaded_s")
         if augment_frame_num is None:
             self.augment_frame_num = min(self.trajectory_num_frames)
         else:
@@ -144,18 +144,15 @@ class AMPLoader:
         ]
 
         traj_idxs = self.weighted_traj_idx_sample_batch(size=self.augment_trajectory_num)
-        self.preloaded_s, self.preloaded_s_next = [], []
+        self.preloaded_s = []
         for traj_idx in traj_idxs:
             times = self.traj_time_sample_batch(traj_idx, size=self.augment_frame_num + self.amp_obs_frame_num)
-            s, s_next = [], []
+            s =  []
             for frame_time in times:
                 s.append(self.sw_quat(self.get_frame_at_time(traj_idx, frame_time)))
-                s_next.append(self.sw_quat(self.get_frame_at_time(traj_idx, frame_time + self.time_between_frames)))
             self.preloaded_s.append(torch.vstack(s))
-            self.preloaded_s_next.append(torch.vstack(s_next))
-
+        
         self.preloaded_s = torch.stack(self.preloaded_s, dim=0)
-        self.preloaded_s_next = torch.stack(self.preloaded_s_next, dim=0)
 
 
         # Select init state and necessary fields
@@ -193,7 +190,6 @@ class AMPLoader:
         assert set(self.style_fields).issubset(set(self.trajectory_fields)), f"The arguments field {self.style_fields} should have same elements with the dataset fields {self.trajectory_fields} in {motion_file}"
         reorder_field_index = [self.trajectory_fields.index(key) for key in self.style_fields]
         self.selected_preloaded_s = self.preloaded_s[:,:,reorder_field_index]
-        self.selected_preloaded_s_next = self.preloaded_s_next[:,:,reorder_field_index]
     
         print(f"[Dataset Info] self.preloaded_s dim are {len(self.preloaded_s)} and {self.preloaded_s[0].shape} in which augment_frame_num: {self.augment_frame_num} and amp_obs_history_leng: {self.amp_obs_frame_num}")
         print(f"[Dataset Info] Trajectory number: {len(self.trajectory_idxs)}")
