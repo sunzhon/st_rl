@@ -17,13 +17,14 @@ The following example shows how to wrap an environment for RSL-RL:
 
 import torch
 from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
+from legged_robots.tasks.utils.wrappers.st_rl import StRlVecEnvWrapper #, StRlMetricEnvWrapper
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.math import quat_rotate_inverse, yaw_quat
 from isaaclab.utils.math import euler_xyz_from_quat as get_euler_xyz
 
 from .logger import Logger
 
-class StRlMetricEnvWrapper(RslRlVecEnvWrapper):
+class StRlMetricEnvWrapper(StRlVecEnvWrapper):
     """Wrapper class to add metrics and logging capabilities to an RL environment."""
 
     def __init__(self, env, enable_logger=False,log_dir=None):
@@ -33,6 +34,7 @@ class StRlMetricEnvWrapper(RslRlVecEnvWrapper):
             env: The environment to wrap.
             enable_logger: Whether to enable logging.
         """
+        super().__init__(env)
         self.__dict__.update(env.__dict__)
         asset_cfg = SceneEntityCfg("robot")
         asset = self.unwrapped.scene[asset_cfg.name]

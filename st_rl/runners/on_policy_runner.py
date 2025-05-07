@@ -306,7 +306,6 @@ class OnPolicyRunner:
         self.writer.add_scalar('Perf/gpu_global_free_mem', torch.cuda.mem_get_info(self.device)[0] / 1024 ** 3, self.current_learning_iteration)
         self.writer.add_scalar('Perf/gpu_total', torch.cuda.mem_get_info(self.device)[1] / 1024 ** 3, self.current_learning_iteration)
         self.writer.add_scalar('Train/mean_reward_each_timestep', statistics.mean(locs['rframebuffer']), self.current_learning_iteration)
-
         self.writer.add_scalar('Eval/mean_velrmsd', self.metrics_velrmsd, self.current_learning_iteration)
         self.writer.add_scalar('Eval/mean_CoT', self.metrics_CoT, self.current_learning_iteration)
 
@@ -320,37 +319,30 @@ class OnPolicyRunner:
 
         str = f" \033[1m Learning iteration {self.current_learning_iteration}/{locs['tot_iter']} \033[0m "
 
+        log_string = (
+            f"""{'#' * width}\n"""
+            f"""{str.center(width, ' ')}\n\n"""
+            f"""{'Computation:':>{pad}} {fps:.0f} steps/s (collection: {locs[
+                'collection_time']:.3f}s, learning {locs['learn_time']:.3f}s)\n"""
+        )
+        for k, v in locs["losses"].items():
+            log_string += f"""{k:>{pad}} {v.item():.4f}\n"""
+
         if len(locs['rewbuffer']) > 0:
-            log_string = (
-                f"""{'#' * width}\n"""
-                f"""{str.center(width, ' ')}\n\n"""
-                f"""{'Computation:':>{pad}} {fps:.0f} steps/s (collection: {locs[
-                    'collection_time']:.3f}s, learning {locs['learn_time']:.3f}s)\n"""
-            )
-            for k, v in locs["losses"].items():
-                log_string += f"""{k:>{pad}} {v.item():.4f}\n"""
             log_string += (
                 f"""{'Mean action noise std:':>{pad}} {mean_std.item():.2f}\n"""
                 f"""{'Mean reward:':>{pad}} {statistics.mean(locs['rewbuffer']):.2f}\n"""
                 f"""{'Mean episode length:':>{pad}} {statistics.mean(locs['lenbuffer']):.2f}\n"""
-                # f"""{'Mean reward/step:':>{pad}} {locs['mean_reward']:.2f}\n"""
-                # f"""{'Mean episode length/episode:':>{pad}} {locs['mean_trajectory_length']:.2f}\n"""
+                #f"""{'Mean reward/step:':>{pad}} {locs['mean_reward']:.2f}\n"""
+                #f"""{'Mean episode length/episode:':>{pad}} {locs['mean_trajectory_length']:.2f}\n"""
             )
         else:
-            log_string = (
-                f"""{'#' * width}\n"""
-                f"""{str.center(width, ' ')}\n\n"""
-                f"""{'Computation:':>{pad}} {fps:.0f} steps/s (collection: {locs[
-                    'collection_time']:.3f}s, learning {locs['learn_time']:.3f}s)\n"""
-            )
-            for k, v in locs["losses"].items():
-                log_string += f"""{k:>{pad}} {v.item():.4f}\n"""
             log_string += (
                 f"""{'Value function loss:':>{pad}} {locs["losses"]['value_loss']:.4f}\n"""
                 f"""{'Surrogate loss:':>{pad}} {locs["losses"]['surrogate_loss']:.4f}\n"""
                 f"""{'Mean action noise std:':>{pad}} {mean_std.item():.2f}\n"""
-                # f"""{'Mean reward/step:':>{pad}} {locs['mean_reward']:.2f}\n"""
-                # f"""{'Mean episode length/episode:':>{pad}} {locs['mean_trajectory_length']:.2f}\n"""
+                #f"""{'Mean reward/step:':>{pad}} {locs['mean_reward']:.2f}\n"""
+                #f"""{'Mean episode length/episode:':>{pad}} {locs['mean_trajectory_length']:.2f}\n"""
             )
 
         log_string += ep_string
