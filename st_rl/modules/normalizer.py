@@ -142,8 +142,10 @@ class Normalizer(RunningMeanStd):
             self.mean, device=device, dtype=torch.float32)
         std_torch = torch.sqrt(torch.tensor(
             self.var + self.epsilon, device=device, dtype=torch.float32))
-        return torch.clamp(
-            (input - mean_torch) / std_torch, -self.clip_obs, self.clip_obs)
+        try:
+            return torch.clamp((input - mean_torch) / std_torch, -self.clip_obs, self.clip_obs)
+        except Exception as e:
+            import pdb;pdb.set_trace()
 
     def update_normalizer(self, rollouts, expert_loader):
         policy_data_generator = rollouts.feed_forward_generator_amp(
