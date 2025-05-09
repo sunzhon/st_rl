@@ -12,6 +12,16 @@ from st_rl.datasets import motion_util
 from st_rl.datasets.pose3d import QuaternionNormalize
 
 
+# Configure the logging system
+import logging
+logging.basicConfig(
+    level=logging.INFO,  # Set the minimum logging level
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'  # Define the log message format
+)
+# Create a logger object
+logger = logging.getLogger("motion_loader")
+
+
 class AMPLoader:
     def __init__(
         self,
@@ -48,7 +58,7 @@ class AMPLoader:
             device: Device to run the model on (e.g., 'cpu' or 'cuda').
         """
 
-        print(f"[Datset Info] Motion files: \n{motion_files}")
+        #logger.info(f"[Datset Info] Motion files: \n{motion_files}")
         self.time_between_frames = time_between_frames  # the duration between two cohenrent frames
         
         self.switch_quaternion = switch_quaternion
@@ -74,14 +84,12 @@ class AMPLoader:
         self.trajectory_frame_durations = []  # the duration of a frame
         self.trajectory_num_frames = []
 
-        # self.clock=0.0 # a clock count from 0 to 1.
-        # self.dt=0.001
 
         # Load motion data from files
         assert len(motion_files) > 0, "No motion files found."
         for i, motion_file in enumerate(motion_files):
             self.trajectory_names.append(motion_file.split(".")[0])
-            print(f"[Dataset Info] start to reading {motion_file}")
+            logger.info(f"[Dataset Info] start to reading {motion_file}")
             with open(motion_file, "r") as f:
                 motion_json = json.load(f)
                 motion_data = np.array(motion_json["Frames"])
@@ -91,11 +99,11 @@ class AMPLoader:
                 frame_begin = frame_begin if frame_begin is not None else 0
                 frame_end = motion_data.shape[0] if frame_end is None else frame_end
                 
-                print(f"[Dataset Info] Load {motion_file}")
-                print(f"[Dataset Info] It has {motion_data.shape[0]} frames.")
+                logger.info(f"[Dataset Info] Load {motion_file}")
+                logger.info(f"[Dataset Info] It has {motion_data.shape[0]} frames.")
                 motion_data = motion_data[frame_begin:frame_end, :]
-                print(f"[Dataset Info] Select {motion_data.shape[0]} frames from frame_begin is {frame_begin} and frame_end is {frame_end}.")
-                #print(f"[Dataset Info] Re-ordered trajectory fields: {self.style_fields}")
+                logger.info(f"[Dataset Info] Select {motion_data.shape[0]} frames from frame_begin is {frame_begin} and frame_end is {frame_end}.")
+                #logger.info(f"[Dataset Info] Re-ordered trajectory fields: {self.style_fields}")
 
                 # Normalize and standardize quaternions.
                 for f_i in range(motion_data.shape[0]):
@@ -114,8 +122,8 @@ class AMPLoader:
                 self.trajectory_lens.append(traj_len)  # it is time [s], frame len* duration
                 self.trajectory_num_frames.append(float(motion_data.shape[0]))
 
-                print(f"[Dataset Info] Select {traj_len} s motion from the trajectory.")
-                #print(f"[Dataset Info] The trajectory fields are: {self.trajectory_fields}")
+                logger.info(f"[Dataset Info] Select {traj_len} s motion from the trajectory.")
+                #logger.info(f"[Dataset Info] The trajectory fields are: {self.trajectory_fields}")
 
         # Normalize trajectory weights
         self.trajectory_weights = np.array(self.trajectory_weights) / np.sum(
@@ -126,7 +134,7 @@ class AMPLoader:
         self.trajectory_num_frames = np.array(self.trajectory_num_frames)
 
         # Preload transitions if specified
-        print(f"[Dataset Info] Preloading data into self.preloaded_s")
+        logger.info(f"[Dataset Info] Preloading data into self.preloaded_s")
         if augment_frame_num is None:
             self.augment_frame_num = int(min(self.trajectory_num_frames))
         else:
@@ -186,13 +194,13 @@ class AMPLoader:
             self.expressive_link_pos = self.preloaded_s[:,:,self.expressive_link_pos_index][traj_idxs, 1,:] # s_1, since the rewards calculated according to s_t+1
 
         # Select fields
-        #print(f"[Dataset Info] The SELECTED trajectory fields are: {self.style_fields}")
+        #logger.info(f"[Dataset Info] The SELECTED trajectory fields are: {self.style_fields}")
         assert set(self.style_fields).issubset(set(self.trajectory_fields)), f"The arguments field {self.style_fields} should have same elements with the dataset fields {self.trajectory_fields} in {motion_file}"
         reorder_field_index = [self.trajectory_fields.index(key) for key in self.style_fields]
         self.selected_preloaded_s = self.preloaded_s[:,:,reorder_field_index]
     
-        print(f"[Dataset Info] self.preloaded_s dim are {len(self.preloaded_s)} and {self.preloaded_s[0].shape} in which augment_frame_num: {self.augment_frame_num} and amp_obs_history_leng: {self.amp_obs_frame_num}")
-        print(f"[Dataset Info] Trajectory number: {len(self.trajectory_idxs)}")
+        logger.info(f"[Dataset Info] self.preloaded_s dim are {len(self.preloaded_s)} and {self.preloaded_s[0].shape} in which augment_frame_num: {self.augment_frame_num} and amp_obs_history_leng: {self.amp_obs_frame_num}")
+        logger.info(f"[Dataset Info] Trajectory number: {len(self.trajectory_idxs)}")
 
     def weighted_traj_idx_sample(self):
         """Get traj idx via weighted sampling."""
@@ -438,5 +446,5 @@ if __name__ == "__main__":
     amp_data = AMPLoader(**amp_data_cfg)
     amp_expert_generator = amp_data.expert_obs_generator(100, 1)
     for _ in range(4):
-        print(amp_expert_generator.__next__().shape)
-        print(amp_expert_generator.__next__()[:13])
+        logger.info(amp_expert_generator.__next__().shape)
+        logger.info(amp_expert_generator.__next__()[:13])
