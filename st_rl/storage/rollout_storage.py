@@ -198,6 +198,7 @@ class RolloutStorage:
                 last_was_done = torch.zeros_like(dones, dtype=torch.bool)
                 last_was_done[1:] = dones[:-1]
                 last_was_done[0] = True
+                # finr the trajector num from stop-start envs' episodes
                 trajectories_batch_size = torch.sum(last_was_done[:, start:stop])
                 last_traj = first_traj + trajectories_batch_size
                 
@@ -450,10 +451,6 @@ class ActionLabelRollout(QueueRolloutStorage):
     def get_minibatch_from_indices(self, T_slice, B_slice, padded_B_slice=None, prev_done_mask=None):
         minibatch = super().get_minibatch_from_indices(T_slice, B_slice, padded_B_slice, prev_done_mask)
         action_label_batch = self.action_labels[T_slice, B_slice]
-
-        #if padded_B_slice is None:
-        #    action_label_batch = action_label_batch.flatten(0, 1)
-        
         return ActionLabelRollout.MiniBatch(*minibatch, action_label_batch)
             
 class SarsaRolloutStorage(RolloutStorage):
@@ -521,8 +518,8 @@ class SarsaRolloutStorage(RolloutStorage):
             next_obs_batch = self.next_observations[T_slice, B_slice]
             next_critic_obs_batch = next_obs_batch if self.privileged_observations is None else self.next_privileged_observations[T_slice, B_slice]
         else:
-            next_obs_batch = self._padded_next_obs_trajectories[T_slice, B_slice]
-            next_critic_obs_batch = next_obs_batch if self.privileged_observations is None else self._padded_next_critic_obs_trajectories[T_slice, B_slice]
+            next_obs_batch = self._padded_next_obs_trajectories[T_slice, padded_B_slice]
+            next_critic_obs_batch = next_obs_batch if self.privileged_observations is None else self._padded_next_critic_obs_trajectories[T_slice, padded_B_slice]
         
         return SarsaRolloutStorage.MiniBatch(
             *minibatch,
@@ -580,13 +577,24 @@ class AmpRolloutStorage(ActionLabelRollout):
     
     def get_minibatch_from_indices(self, T_slice, B_slice, padded_B_slice=None, prev_done_mask=None):
         minibatch = super().get_minibatch_from_indices(T_slice, B_slice, padded_B_slice, prev_done_mask)
-        amp_policy_batch = self.amp_policy[T_slice, B_slice]
-        amp_expert_batch = self.amp_expert[T_slice, B_slice]
         
-        #import pdb;pdb.set_trace()
-        #if padded_B_slice is None:
-        #    amp_policy_batch = amp_policy_batch.flatten(0, 1)
-        #    amp_expert_batch = amp_expert_batch.flatten(0, 1)
-
+        if padded_B_slice is None:
+            amp_policy_batch = self.amp_policy[T_slice, B_slice]
+            amp_expert_batch = self.amp_expert[T_slice, B_slice]
+        else:
+            amp_policy_batch = self._padded_amp_policy_trajectories[T_slice, padded_B_slice]
+            amp_expert_batch = self._padded_amp_expert_trajectories[T_slice, padded_B_slice]
         
         return AmpRolloutStorage.MiniBatch(*minibatch, amp_policy_batch, amp_expert_batch)
+
+
+    def reccurent_mini_batch_generator(self, num_mini_batches, num_epochs=8):
+        self._padded_amp_policy_trajectories, _ = split_and_pad_trajectories(
+           self.amp_policy,
+           self.dones,
+        )
+        self._padded_amp_expert_trajectories, _ = split_and_pad_trajectories(
+           self.amp_expert,
+           self.dones,
+        )
+        return super().reccurent_mini_batch_generator(num_mini_batches, num_epochs)

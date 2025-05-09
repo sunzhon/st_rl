@@ -41,10 +41,10 @@ import os
 from typing import Callable
 
 def split_and_pad_trajectories(tensor, dones):
-    """ Splits trajectories at done indices. Then concatenates them and padds with zeros up to the length og the longest trajectory.
+    """ Splits trajectories at done indices. Then concatenates them and padds with zeros up to the length of the longest trajectory.
     Returns masks corresponding to valid parts of the trajectories
     Example: 
-        Input: [ [a1, a2, a3, a4 | a5, a6],
+        Input: [ [a1, a2, a3, a4 | a5, a6], # a row indicates a env, which has two dones (a4 and a6), a done may be caused by termination reset or timeout (finish)
                  [b1, b2 | b3, b4, b5 | b6]
                 ]
 
@@ -57,7 +57,8 @@ def split_and_pad_trajectories(tensor, dones):
             
     Assumes that the inputy has the following dimension order: [time, number of envs, aditional dimensions]
     NOTE: The output shape will also be [time, number of envs, additional dimensions].
-        But `time` might be smaller than the input `time`.
+        But `number of env` indicates the trajectory num, which might be large than original 'num of env'.
+        The output 'time' might be fill with zero, to make it is same with the input time
     """
     dones = dones.clone()
     dones[-1] = 1
@@ -65,13 +66,13 @@ def split_and_pad_trajectories(tensor, dones):
     flat_dones = dones.transpose(1, 0).reshape(-1, 1)
 
     # Get length of trajectory by counting the number of successive not done elements
-    done_indices = torch.cat((flat_dones.new_tensor([-1], dtype=torch.int64), flat_dones.nonzero()[:, 0]))
+    # the first one is -1, to indicate the first simulation indices
+    done_indices = torch.cat((flat_dones.new_tensor([-1], dtype=torch.int64), flat_dones.nonzero()[:, 0])) # all dones env indicates, some env have more than one time dones
     trajectory_lengths = done_indices[1:] - done_indices[:-1]
     trajectory_lengths_list = trajectory_lengths.tolist()
     # Extract the individual trajectories
     trajectories = torch.split(tensor.transpose(1, 0).flatten(0, 1),trajectory_lengths_list)
     padded_trajectories = torch.nn.utils.rnn.pad_sequence(trajectories)
-
 
     trajectory_masks = trajectory_lengths > torch.arange(0, tensor.shape[0], device=tensor.device).unsqueeze(1)
     if padded_trajectories.shape[0] < tensor.shape[0]:
