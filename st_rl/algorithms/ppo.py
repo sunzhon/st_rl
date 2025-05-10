@@ -100,7 +100,8 @@ class PPO:
         else:
             self.obs_normalizer = torch.nn.Identity().to(self.device)  # no normalization
             self.critic_obs_normalizer = torch.nn.Identity().to(self.device)  # no normalization
-            print(f"[ppo] Do not use normalization for obs and critic_obs")
+            raise (f"[ppo] Do not use normalization for obs and critic_obs")
+            
 
     def init_storage(self, num_envs, num_transitions_per_env, actor_obs_shape, critic_obs_shape, action_shape, **kwargs):
         self.transition = RolloutStorage.Transition()
