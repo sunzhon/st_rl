@@ -369,7 +369,7 @@ class OnPolicyRunner:
             self.writer.save_model(path, self.current_learning_iteration)
 
     def load(self, path, load_optimizer=True, map_location=None):
-        loaded_dict = torch.load(path,map_location=map_location)
+        loaded_dict = torch.load(path,map_location=map_location, weights_only=False)
         if self.cfg.get("ckpt_manipulator", False):
             # suppose to be a string specifying which function to use
             print("\033[1;36m Warning: using a hacky way to load the model. \033[0m")
