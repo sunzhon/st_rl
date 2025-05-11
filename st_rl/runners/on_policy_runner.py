@@ -59,7 +59,7 @@ class OnPolicyRunner:
         self.policy_cfg = train_cfg["policy"]
         self.device = device
         self.env = env
-        
+
         # get obs num and critic_obs num
         obs, extras = self.env.get_observations()
         self.policy_cfg["num_obs"] = obs.shape[1]
@@ -356,20 +356,32 @@ class OnPolicyRunner:
                                locs['tot_iter'] - self.current_learning_iteration):.1f}s\n""")
         print(log_string)
 
-    def save(self, path, infos=None):
-        run_state_dict = self.alg.state_dict() #the tranining policy network state_dict
-        run_state_dict.update({
+
+
+    def save(self, path: str, infos=None):
+        # -- Save model
+        saved_dict = self.alg.state_dict() #the tranining policy network state_dict
+        saved_dict.update({
             'iter': self.current_learning_iteration,
             'infos': infos,
-        })
-        torch.save(run_state_dict, path)
+            })
 
-        # Upload model to external logging service
+        # -- Save RND model if used
+        if self.alg.rnd:
+            saved_dict["rnd_state_dict"] = self.alg.rnd.state_dict()
+            saved_dict["rnd_optimizer_state_dict"] = self.alg.rnd_optimizer.state_dict()
+
+        # save model
+        torch.save(saved_dict, path)
+
+        # upload model to external logging service
         if self.logger_type in ["neptune", "wandb"]:
             self.writer.save_model(path, self.current_learning_iteration)
 
+
     def load(self, path, load_optimizer=True, map_location=None):
         loaded_dict = torch.load(path,map_location=map_location, weights_only=False)
+
         if self.cfg.get("ckpt_manipulator", False):
             # suppose to be a string specifying which function to use
             print("\033[1;36m Warning: using a hacky way to load the model. \033[0m")
@@ -381,13 +393,20 @@ class OnPolicyRunner:
             print("\033[1;36m Done: using a hacky way to load the model. \033[0m")
 
         self.alg.load_state_dict(loaded_dict)
+
+        # -- Load RND model if used
+        if self.alg.rnd:
+            self.alg.rnd.load_state_dict(loaded_dict["rnd_state_dict"])
+
         self.current_learning_iteration = loaded_dict['iter']
         if self.cfg.get("ckpt_manipulator", False):
             try:
                 self.save(os.path.join(self.log_dir, 'model_{}.pt'.format(self.current_learning_iteration)))
             except:
                 print("\033[1;36m Save manipulated checkpoint failed, ignored... \033[0m")
+
         return loaded_dict['infos']
+
 
     def get_inference_policy(self, device=None):
         self.eval_mode() # switch to evaluation mode (dropout for example)
@@ -402,15 +421,20 @@ class OnPolicyRunner:
         return policy
 
 
-
     def train_mode(self):
         self.alg.actor_critic.train()
+        # -- RND
+        if self.alg.rnd:
+            self.alg.rnd.train()
         if self.alg.empirical_normalization:
             self.alg.obs_normalizer.train()
             self.alg.critic_obs_normalizer.train()
 
     def eval_mode(self):
         self.alg.actor_critic.eval()
+        # -- RND
+        if self.alg.rnd:
+            self.alg.rnd.eval()
         if self.alg.empirical_normalization:
             self.alg.obs_normalizer.eval()
             self.alg.critic_obs_normalizer.eval()

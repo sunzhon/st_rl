@@ -91,6 +91,8 @@ class PPO:
         # obs preprocess parameters
         self.empirical_normalization = empirical_normalization
 
+        self.rnd=False
+
 
     def init_obs_norm(self, num_obs, num_critic_obs):
         # get normalization 
@@ -252,20 +254,32 @@ class PPO:
         }
         if hasattr(self, "lr_scheduler"):
             state_dict["lr_scheduler_state_dict"] = self.lr_scheduler.state_dict()
+
+        # -- Save observation normalizer if used
+        if self.empirical_normalization:
+            state_dict["obs_norm_state_dict"] = self.obs_normalizer.state_dict()
+            state_dict["critic_obs_norm_state_dict"] = self.critic_obs_normalizer.state_dict()
         
         return state_dict
     
     def load_state_dict(self, state_dict):
-        self.actor_critic.load_state_dict(state_dict["model_state_dict"])
+        resumed_trianing = self.actor_critic.load_state_dict(state_dict["model_state_dict"])
+
+        # -- Load RND model if used
+        if self.rnd:
+            self.alg.rnd.load_state_dict(state_dict["rnd_state_dict"])
+
         if "optimizer_state_dict" in state_dict:
             self.optimizer.load_state_dict(state_dict["optimizer_state_dict"])
 
         if "obs_norm_state_dict" in state_dict:
-            self.obs_normalizer.load_state_dict(loaded_dict["obs_norm_state_dict"])
+            self.obs_normalizer.load_state_dict(state_dict["obs_norm_state_dict"])
+
         if "critic_obs_norm_state_dict" in state_dict:
-            self.critic_obs_normalizer.load_state_dict(loaded_dict["critic_obs_norm_state_dict"])
+            self.critic_obs_normalizer.load_state_dict(state_dict["critic_obs_norm_state_dict"])
 
         if hasattr(self, "lr_scheduler"):
             self.lr_scheduler.load_state_dict(state_dict["lr_scheduler_state_dict"])
         elif "lr_scheduler_state_dict" in state_dict:
             print("Warning: lr scheduler state dict loaded but no lr scheduler is initialized. Ignored.")
+
