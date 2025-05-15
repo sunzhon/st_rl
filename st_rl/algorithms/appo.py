@@ -43,20 +43,15 @@ class APPOAlgoMixin:
         super().__init__(*args, **kwargs)
 
         # The shape of the normalizer is the same as the observation space
-        # of the policy
-        # AMP data loader (adversarial motion prior)
-        amp_data_cfg = kwargs.get("amp_data", {})
-        amp_data_cfg["device"] = self.device
-        self.amp_data = AMPLoader(**amp_data_cfg)
 
-        if "mimic_loss_coef" in amp_data_cfg.keys():
-            self.mimic_loss_coef = amp_data_cfg["mimic_loss_coef"]
+        if "mimic_loss_coef" in kwargs.keys():
+            self.mimic_loss_coef = kwargs["mimic_loss_coef"]
             print(f"mimic loss: {self.mimic_loss_coef}")
-        if "discriminator_loss_coef" in amp_data_cfg.keys():
-            self.discriminator_loss_coef = amp_data_cfg["discriminator_loss_coef"]
+        if "discriminator_loss_coef" in kwargs.keys():
+            self.discriminator_loss_coef = kwargs["discriminator_loss_coef"]
 
         # Initialize the AMP normalizer with the observation shape and device
-        self.amp_normalizer = Normalizer(amp_data_cfg["amp_obs_dim"])
+        self.ref_normalizer = Normalizer(kwargs["amp_obs_dim"])
 
     def init_storage(self, *args, **kwargs):
         self.transition = AmpRolloutStorage.Transition()
@@ -74,11 +69,13 @@ class APPOAlgoMixin:
 
         return return_
 
-    def process_env_step(self, rewards, dones, infos, amp_obs):
+    def process_env_step(self, rewards, dones, infos):
+
         # get amp policy data
-        self.transition.amp_policy = amp_obs.clone()
+        self.transition.amp_policy = infos["observations"]["ref_obs"].reshape(infos["observations"]["ref_obs"].shape[0],-1).to(self.device)
         # get amp expert data
-        self.transition.amp_expert = self.expert_obs_generator.__next__()
+        self.transition.amp_expert = infos["ref_motion"]
+
         return_ = super().process_env_step(rewards, dones, infos)
 
         return return_
@@ -109,10 +106,10 @@ class APPOAlgoMixin:
                 policy_state = minibatch.amp_policy
                 expert_state = minibatch.amp_expert
                 with torch.no_grad():
-                    policy_state = self.amp_normalizer.normalize_torch(
+                    policy_state = self.ref_normalizer.normalize_torch(
                         policy_state, self.device
                     )
-                    expert_state = self.amp_normalizer.normalize_torch(
+                    expert_state = self.ref_normalizer.normalize_torch(
                         expert_state, self.device
                     )
                 policy_d = self.actor_critic.discriminator(policy_state)
@@ -128,9 +125,9 @@ class APPOAlgoMixin:
                 losses["discriminator_policy_loss"] = 0.5*policy_loss
                 losses["discriminator_grad_len_loss"] = grad_pen_loss
 
-                if self.amp_normalizer is not None:
-                    self.amp_normalizer.update(policy_state.detach().cpu().numpy())
-                    self.amp_normalizer.update(expert_state.detach().cpu().numpy())
+                if self.ref_normalizer is not None:
+                    self.ref_normalizer.update(policy_state.detach().cpu().numpy())
+                    self.ref_normalizer.update(expert_state.detach().cpu().numpy())
 
         return losses, inter_vars, stats
 

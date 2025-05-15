@@ -52,29 +52,6 @@ class AmpPolicyRunner(OnPolicyRunner):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        if self.alg_cfg.get("amp_data") is not None:
-            # base velocity should come from demo data if using imiattion learning
-            self.env.unwrapped.scene["robot"].data.demo_base_velocity= self.alg.amp_data.base_velocity
-
-            # for env initialization
-            if self.alg_cfg["amp_data"]["init_state_fields"] is not None:
-                self.env.unwrapped.scene["robot"].data.demo_init_states = self.alg.amp_data.init_states
-
-            # for amp goal/commands
-            if self.alg_cfg["amp_data"]["style_goal_fields"] is not None:
-                self.env.unwrapped.scene["robot"].data.style_goal = self.alg.amp_data.style_goal
-
-            # for expressive goal/commands
-            if self.alg_cfg["amp_data"]["expressive_goal_fields"] is not None:
-                self.env.unwrapped.scene["robot"].data.expressive_goal = self.alg.amp_data.expressive_goal
-            
-            # for tracking expressive joint fields
-            if self.alg_cfg["amp_data"]["expressive_joint_name"] is not None:
-                self.env.unwrapped.scene["robot"].data.expressive_tracking_joint_pos = self.alg.amp_data.expressive_joint_pos
-
-            # for tracking expressive link fields
-            if self.alg_cfg["amp_data"]["expressive_link_name"] is not None:
-                self.env.unwrapped.scene["robot"].data.expressive_tracking_link_pos = self.alg.amp_data.expressive_link_pos
     
     def rollout_step(self, obs, critic_obs):
         # get actions from policy
@@ -104,28 +81,9 @@ class AmpPolicyRunner(OnPolicyRunner):
             print("Please define amp_discriminator")
 
         # process the step
-        self.alg.process_env_step(rewards, dones, infos, amp_obs)
-
-        # update style/expressive goals and tracking values from the above __nex__() in process_env_step()
-        if self.alg_cfg.get("amp_data") is not None:
-            # base velocity should come from demo data if using imiattion learning
-            self.env.unwrapped.scene["robot"].data.demo_base_velocity= self.alg.amp_data.base_velocity
-            # for amp goal/commands
-            if self.alg_cfg["amp_data"]["style_goal_fields"] is not None:
-                self.env.unwrapped.scene["robot"].data.style_goal = self.alg.amp_data.style_goal
-            # for expressive goal/commands
-            if self.alg_cfg["amp_data"]["expressive_goal_fields"] is not None:
-                self.env.unwrapped.scene["robot"].data.expressive_goal = self.alg.amp_data.expressive_goal
-            # for tracking expressive pos fields
-            if self.alg_cfg["amp_data"]["expressive_joint_name"] is not None:
-                self.env.unwrapped.scene["robot"].data.expressive_tracking_joint_pos = self.alg.amp_data.expressive_joint_pos
-            # for tracking expressive link fields
-            if self.alg_cfg["amp_data"]["expressive_link_name"] is not None:
-                self.env.unwrapped.scene["robot"].data.expressive_tracking_link_pos = self.alg.amp_data.expressive_link_pos
-
+        self.alg.process_env_step(rewards, dones, infos)
 
         return obs, critic_obs, rewards, dones, infos
-
 
 
     def learn(self, num_learning_iterations, init_at_random_ep_len=False, trial=None):
@@ -137,10 +95,6 @@ class AmpPolicyRunner(OnPolicyRunner):
         obs, extras = self.env.get_observations()
         critic_obs = extras["observations"].get("critic", obs)
         obs, critic_obs = obs.to(self.device), critic_obs.to(self.device)
-        #if "amp_policy" in extras["observations"]:
-        #    amp_obs = extras["observations"].get("amp_policy",obs)
-        #else:
-        #    amp_obs=None
 
         # switch to training mode
         self.train_mode()  # switch to train mode (for dropout for example)
@@ -162,7 +116,7 @@ class AmpPolicyRunner(OnPolicyRunner):
             #1) Rollout, inference_mode for data collection
             with torch.inference_mode(self.cfg.get("inference_mode_rollout", True)):
                 # make an expert obs generator, 
-                self.alg.expert_obs_generator = self.alg.amp_data.expert_obs_generator()
+                self.env.reset_ref_motion()
                 # data collection
                 for i in range(self.num_steps_per_env):
                     obs, critic_obs, rewards, dones, infos = self.rollout_step(obs, critic_obs)

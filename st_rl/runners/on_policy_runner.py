@@ -146,10 +146,6 @@ class OnPolicyRunner:
         obs, extras = self.env.get_observations()
         critic_obs = extras["observations"].get("critic", obs)
         obs, critic_obs = obs.to(self.device), critic_obs.to(self.device)
-        if "amp_policy" in extras["observations"]:
-            amp_obs = extras["observations"].get("amp_policy",obs)
-        else:
-            amp_obs=None
 
         # switch to training mode
         self.train_mode()  # switch to train mode (for dropout for example)
@@ -171,7 +167,7 @@ class OnPolicyRunner:
             #1) Rollout, inference_mode for data collection
             with torch.inference_mode(self.cfg.get("inference_mode_rollout", True)):
                 for i in range(self.num_steps_per_env):
-                    obs, critic_obs, rewards, dones, infos, amp_obs = self.rollout_step(obs, critic_obs, amp_obs)
+                    obs, critic_obs, rewards, dones, infos = self.rollout_step(obs, critic_obs)
                     if self.log_dir is not None:
                         # Book keeping
                         if "episode" in infos:
@@ -233,7 +229,7 @@ class OnPolicyRunner:
         self.metrics_velrmsd = self.env.lin_vel_rmsd.mean()
         self.metrics_CoT = self.env.CoT.mean()
 
-    def rollout_step(self, obs, critic_obs, amp_obs, **kwargs):
+    def rollout_step(self, obs, critic_obs, **kwargs):
         # get actions from policy
         actions = self.alg.act(obs, critic_obs)
         # step env
@@ -250,7 +246,7 @@ class OnPolicyRunner:
 
         # process the step
         self.alg.process_env_step(rewards, dones, infos)
-        return obs, critic_obs, rewards, dones, infos, amp_obs
+        return obs, critic_obs, rewards, dones, infos
 
     def log(self, locs, width=80, pad=35):
         self.tot_timesteps += self.num_steps_per_env * self.env.num_envs

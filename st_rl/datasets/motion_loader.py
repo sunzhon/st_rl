@@ -7,7 +7,6 @@ import torch
 import numpy as np
 from pybullet_utils import transformations
 
-from st_rl.utils import utils
 from st_rl.datasets import motion_util
 from st_rl.datasets.pose3d import QuaternionNormalize
 
@@ -32,7 +31,6 @@ class AMPLoader:
         ),
         style_goal_fields=None,
         style_fields=None,
-        switch_quaternion=False,
         shuffle=False,
         device="cuda:0",
         frame_begin=None,
@@ -61,7 +59,6 @@ class AMPLoader:
         #logger.info(f"[Datset Info] Motion files: \n{motion_files}")
         self.time_between_frames = time_between_frames  # the duration between two cohenrent frames
         
-        self.switch_quaternion = switch_quaternion
         self.shuffle = shuffle
 
         self.style_fields = style_fields
@@ -150,14 +147,15 @@ class AMPLoader:
         self.root_rot_index = [
             self.style_fields.index("root_rot_" + key) for key in ["x", "y", "z", "w"]
         ]
-
+        
+        # Loading preloaded dataset
         traj_idxs = self.weighted_traj_idx_sample_batch(size=self.augment_trajectory_num)
         self.preloaded_s = []
         for traj_idx in traj_idxs:
             times = self.traj_time_sample_batch(traj_idx, size=self.augment_frame_num + self.amp_obs_frame_num)
             s =  []
             for frame_time in times:
-                s.append(self.sw_quat(self.get_frame_at_time(traj_idx, frame_time)))
+                s.append(self.get_frame_at_time(traj_idx, frame_time))
             self.preloaded_s.append(torch.vstack(s))
         
         self.preloaded_s = torch.stack(self.preloaded_s, dim=0)
