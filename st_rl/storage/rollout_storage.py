@@ -536,65 +536,65 @@ class AmpRolloutStorage(ActionLabelRollout):
     class Transition(ActionLabelRollout.Transition):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
-            self.amp_policy = None
-            self.amp_expert = None
+            self.ref_obs = None
+            self.ref_motion = None
     
     MiniBatch = namedtuple("MiniBatch", [
         *ActionLabelRollout.MiniBatch._fields,
-        "amp_policy",
-        "amp_expert",
+        "ref_obs",
+        "ref_motion",
     ])
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.amp_obs_shape = kwargs["amp_obs_shape"]
-        self.amp_policy = torch.zeros(self.num_transitions_per_env, self.num_envs, *self.amp_obs_shape, device=self.device)
-        self.amp_expert = torch.zeros(self.num_transitions_per_env, self.num_envs, *self.amp_obs_shape, device=self.device)
+        self.ref_obs = torch.zeros(self.num_transitions_per_env, self.num_envs, *self.amp_obs_shape, device=self.device)
+        self.ref_motion = torch.zeros(self.num_transitions_per_env, self.num_envs, *self.amp_obs_shape, device=self.device)
 
     def expand_buffer_once(self):
         expand_size = super().expand_buffer_once()
 
-        self.amp_policy = torch.cat([
-            self.amp_policy,
+        self.ref_obs = torch.cat([
+            self.ref_obs,
             torch.zeros(expand_size, self.num_envs, *self.amp_obs_shape, device=self.device),
         ], dim= 0).contiguous()
 
-        self.amp_expert = torch.cat([
-            self.amp_expert,
+        self.ref_motion = torch.cat([
+            self.ref_motion,
             torch.zeros(expand_size, self.num_envs, *self.amp_obs_shape, device=self.device),
         ], dim= 0).contiguous()
         return expand_size
 
     def add_transitions(self, transition: Transition):
-        self.amp_policy[self.step] = transition.amp_policy
-        self.amp_expert[self.step] = transition.amp_expert
+        self.ref_obs[self.step] = transition.ref_obs
+        self.ref_motion[self.step] = transition.ref_motion
         return super().add_transitions(transition)
 
     def untie_buffer_loop(self):
-        self.amp_policy = self.swap_from_cursor(self.amp_policy)
-        self.amp_expert = self.swap_from_cursor(self.amp_expert)
+        self.ref_obs = self.swap_from_cursor(self.ref_obs)
+        self.ref_motion = self.swap_from_cursor(self.ref_motion)
         return super().untie_buffer_loop()
     
     def get_minibatch_from_indices(self, T_slice, B_slice, padded_B_slice=None, prev_done_mask=None):
         minibatch = super().get_minibatch_from_indices(T_slice, B_slice, padded_B_slice, prev_done_mask)
         
         if padded_B_slice is None:
-            amp_policy_batch = self.amp_policy[T_slice, B_slice]
-            amp_expert_batch = self.amp_expert[T_slice, B_slice]
+            ref_obs_batch = self.ref_obs[T_slice, B_slice]
+            ref_motion_batch = self.ref_motion[T_slice, B_slice]
         else:
-            amp_policy_batch = self._padded_amp_policy_trajectories[T_slice, padded_B_slice]
-            amp_expert_batch = self._padded_amp_expert_trajectories[T_slice, padded_B_slice]
+            ref_obs_batch = self._padded_ref_obs_trajectories[T_slice, padded_B_slice]
+            ref_motion_batch = self._padded_ref_motion_trajectories[T_slice, padded_B_slice]
         
-        return AmpRolloutStorage.MiniBatch(*minibatch, amp_policy_batch, amp_expert_batch)
+        return AmpRolloutStorage.MiniBatch(*minibatch, ref_obs_batch, ref_motion_batch)
 
 
     def reccurent_mini_batch_generator(self, num_mini_batches, num_epochs=8):
-        self._padded_amp_policy_trajectories, _ = split_and_pad_trajectories(
-           self.amp_policy,
+        self._padded_ref_obs_trajectories, _ = split_and_pad_trajectories(
+           self.ref_obs,
            self.dones,
         )
-        self._padded_amp_expert_trajectories, _ = split_and_pad_trajectories(
-           self.amp_expert,
+        self._padded_ref_motion_trajectories, _ = split_and_pad_trajectories(
+           self.ref_motion,
            self.dones,
         )
         return super().reccurent_mini_batch_generator(num_mini_batches, num_epochs)

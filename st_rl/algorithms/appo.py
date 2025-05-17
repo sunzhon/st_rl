@@ -43,13 +43,9 @@ class APPOAlgoMixin:
         super().__init__(*args, **kwargs)
 
         # The shape of the normalizer is the same as the observation space
-
-        if "mimic_loss_coef" in kwargs.keys():
-            self.mimic_loss_coef = kwargs["mimic_loss_coef"]
-            print(f"mimic loss: {self.mimic_loss_coef}")
-        if "discriminator_loss_coef" in kwargs.keys():
-            self.discriminator_loss_coef = kwargs["discriminator_loss_coef"]
-
+        
+        self.discriminator_loss_coef = kwargs["discriminator_loss_coef"][0]
+        self.mimic_loss_coef = kwargs["mimic_loss_coef"][0]
         # Initialize the AMP normalizer with the observation shape and device
         self.ref_normalizer = Normalizer(kwargs["amp_obs_dim"])
 
@@ -71,10 +67,10 @@ class APPOAlgoMixin:
 
     def process_env_step(self, rewards, dones, infos):
 
-        # get amp policy data
-        self.transition.amp_policy = infos["observations"]["ref_obs"].reshape(infos["observations"]["ref_obs"].shape[0],-1).to(self.device)
-        # get amp expert data
-        self.transition.amp_expert = infos["ref_motion"]
+        # get amp ref obs
+        self.transition.ref_obs = infos["observations"]["ref_obs"].reshape(infos["observations"]["ref_obs"].shape[0],-1).to(self.device)
+        # get amp ref motion
+        self.transition.ref_motion = infos["ref_motion"]
 
         return_ = super().process_env_step(rewards, dones, infos)
 
@@ -93,8 +89,8 @@ class APPOAlgoMixin:
 
         if hasattr(self, "mimic_loss_coef"):
             if self.mimic_loss_coef != 0:
-                policy_state = minibatch.amp_policy
-                expert_state = minibatch.amp_expert
+                policy_state = minibatch.ref_obs
+                expert_state = minibatch.ref_motion
                 mimic_loss = torch.norm(
                     policy_state - expert_state, dim=-1
                 ).mean()
@@ -103,8 +99,8 @@ class APPOAlgoMixin:
         # Discriminator loss.
         if hasattr(self.actor_critic, "discriminator"):
             if self.discriminator_loss_coef != 0:
-                policy_state = minibatch.amp_policy
-                expert_state = minibatch.amp_expert
+                policy_state = minibatch.ref_obs
+                expert_state = minibatch.ref_motion
                 with torch.no_grad():
                     policy_state = self.ref_normalizer.normalize_torch(
                         policy_state, self.device

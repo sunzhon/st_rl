@@ -51,7 +51,6 @@ from torch.utils.tensorboard import SummaryWriter as TensorboardSummaryWriter
 class AmpPolicyRunner(OnPolicyRunner):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
     
     def rollout_step(self, obs, critic_obs):
         # get actions from policy
@@ -71,9 +70,9 @@ class AmpPolicyRunner(OnPolicyRunner):
 
         # process discriminator rewards
         if self.policy_cfg.get("amp_discriminator") is not None:
-            amp_obs = infos["observations"]["amp_policy"] # env_num, history_len, field_num
-            amp_obs = amp_obs.reshape(amp_obs.shape[0],-1).to(self.device)
-            style_reward, task_reward, rewards = self.alg.actor_critic.discriminator.predict_style_reward(amp_obs, rewards, self.alg.amp_normalizer, self.device)
+            ref_obs = infos["observations"]["ref_obs"] # env_num, history_len, field_num
+            ref_obs = ref_obs.reshape(ref_obs.shape[0],-1).to(self.device)
+            style_reward, task_reward, rewards = self.alg.actor_critic.discriminator.predict_style_reward(ref_obs, rewards, self.alg.ref_normalizer, self.device)
             infos["log"]["Episode_Reward/style_reward"] = style_reward.mean().item()
             infos["log"]["Episode_Reward/task_reward"] = task_reward.mean().item()
             infos["log"]["Episode_Reward/merge_rewards"] = rewards.mean().item()
@@ -115,7 +114,7 @@ class AmpPolicyRunner(OnPolicyRunner):
         for it in range(start_iter, tot_iter):
             #1) Rollout, inference_mode for data collection
             with torch.inference_mode(self.cfg.get("inference_mode_rollout", True)):
-                # make an expert obs generator, 
+                # make an ref motion generator, 
                 self.env.reset_ref_motion()
                 # data collection
                 for i in range(self.num_steps_per_env):
