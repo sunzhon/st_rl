@@ -138,6 +138,7 @@ class Normalizer(RunningMeanStd):
             -self.clip_obs, self.clip_obs)
 
     def normalize_torch(self, input, device):
+        self.update(input.detach().cpu().numpy())
         mean_torch = torch.tensor(
             self.mean, device=device, dtype=torch.float32)
         std_torch = torch.sqrt(torch.tensor(

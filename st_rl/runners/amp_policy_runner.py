@@ -52,38 +52,6 @@ class AmpPolicyRunner(OnPolicyRunner):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
     
-    def rollout_step(self, obs, critic_obs):
-        # get actions from policy
-        actions = self.alg.act(obs, critic_obs)
-
-        # step env
-        obs, rewards, dones, infos = self.env.step(actions)
-        obs, critic_obs, rewards, dones = obs.to(self.device), critic_obs.to(self.device), rewards.to(self.device), dones.to(self.device)
-        
-        # NOTE : terminal_amp_states, see amp for hardware
-        # perform normalization
-        obs = self.alg.obs_normalizer(obs)
-        if "critic" in infos["observations"]:
-            critic_obs = self.alg.critic_obs_normalizer(infos["observations"]["critic"])
-        else:
-            critic_obs = obs
-
-        # process discriminator rewards
-        if self.policy_cfg.get("amp_discriminator") is not None:
-            ref_obs = infos["observations"]["ref_obs"] # env_num, history_len, field_num
-            ref_obs = ref_obs.reshape(ref_obs.shape[0],-1).to(self.device)
-            style_reward, task_reward, rewards = self.alg.actor_critic.discriminator.predict_style_reward(ref_obs, rewards, self.alg.ref_normalizer, self.device)
-            infos["log"]["Episode_Reward/style_reward"] = style_reward.mean().item()
-            infos["log"]["Episode_Reward/task_reward"] = task_reward.mean().item()
-            infos["log"]["Episode_Reward/merge_rewards"] = rewards.mean().item()
-        else:
-            print("Please define amp_discriminator")
-
-        # process the step
-        self.alg.process_env_step(rewards, dones, infos)
-
-        return obs, critic_obs, rewards, dones, infos
-
 
     def learn(self, num_learning_iterations, init_at_random_ep_len=False, trial=None):
 

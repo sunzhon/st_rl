@@ -10,8 +10,8 @@ from st_rl.utils import unpad_trajectories
 from st_rl.storage.rollout_storage import ActionLabelRollout, AmpRolloutStorage
 from st_rl.algorithms.ppo import PPO
 from st_rl.datasets.motion_loader import AMPLoader
-from st_rl.modules.normalizer import Normalize
 from st_rl.modules.normalizer import Normalizer
+from st_rl.modules import EmpiricalNormalization
 
 
 # assuming learning iteration is at an assumable iteration scale
@@ -44,10 +44,14 @@ class APPOAlgoMixin:
 
         # The shape of the normalizer is the same as the observation space
         
-        self.discriminator_loss_coef = kwargs["discriminator_loss_coef"][0]
-        self.mimic_loss_coef = kwargs["mimic_loss_coef"][0]
+        self.discriminator_loss_coef = kwargs["discriminator_loss_coef"]
+        self.mimic_loss_coef = kwargs["mimic_loss_coef"]
         # Initialize the AMP normalizer with the observation shape and device
-        self.ref_normalizer = Normalizer(kwargs["amp_obs_dim"])
+        #self.ref_normalizer = Normalizer(kwargs["amp_obs_dim"])
+        self.ref_obs_normalizer = EmpiricalNormalization(shape=[kwargs["amp_obs_dim"]], until=1.0e8).to(self.device)
+        self.ref_obs_normalizer.train()
+        self.ref_motion_normalizer = EmpiricalNormalization(shape=[kwargs["amp_obs_dim"]], until=1.0e8).to(self.device)
+        self.ref_motion_normalizer.train()
 
     def init_storage(self, *args, **kwargs):
         self.transition = AmpRolloutStorage.Transition()
@@ -68,9 +72,23 @@ class APPOAlgoMixin:
     def process_env_step(self, rewards, dones, infos):
 
         # get amp ref obs
-        self.transition.ref_obs = infos["observations"]["ref_obs"].reshape(infos["observations"]["ref_obs"].shape[0],-1).to(self.device)
-        # get amp ref motion
-        self.transition.ref_motion = infos["ref_motion"]
+        assert "observations" in infos and "ref_obs" in infos["observations"], "Missing ref_obs in infos"
+        ref_obs = infos["observations"]["ref_obs"]
+        B = ref_obs.shape[0]
+        ref_obs = ref_obs.reshape(B, -1).to(self.device)
+        ref_obs = self.ref_obs_normalizer(ref_obs)
+
+        ref_motion = infos["ref_motion"]
+        ref_motion = self.ref_motion_normalizer(ref_motion)
+
+        # add ref obs and ref motion in transition
+        self.transition.ref_obs = ref_obs
+        self.transition.ref_motion = ref_motion
+
+        # update style rewards and task rewards
+        style_reward, task_reward, rewards = self.actor_critic.discriminator.predict_style_reward(ref_obs, rewards)
+        infos["log"]["Episode_Reward/style_reward"] = style_reward.mean().item()
+        infos["log"]["Episode_Reward/task_reward"] = task_reward.mean().item()
 
         return_ = super().process_env_step(rewards, dones, infos)
 
@@ -101,13 +119,6 @@ class APPOAlgoMixin:
             if self.discriminator_loss_coef != 0:
                 policy_state = minibatch.ref_obs
                 expert_state = minibatch.ref_motion
-                with torch.no_grad():
-                    policy_state = self.ref_normalizer.normalize_torch(
-                        policy_state, self.device
-                    )
-                    expert_state = self.ref_normalizer.normalize_torch(
-                        expert_state, self.device
-                    )
                 policy_d = self.actor_critic.discriminator(policy_state)
                 expert_d = self.actor_critic.discriminator(expert_state)
                 expert_loss = torch.nn.MSELoss()(
@@ -120,10 +131,6 @@ class APPOAlgoMixin:
                 losses["discriminator_expert_loss"] = 0.5*expert_loss
                 losses["discriminator_policy_loss"] = 0.5*policy_loss
                 losses["discriminator_grad_len_loss"] = grad_pen_loss
-
-                if self.ref_normalizer is not None:
-                    self.ref_normalizer.update(policy_state.detach().cpu().numpy())
-                    self.ref_normalizer.update(expert_state.detach().cpu().numpy())
 
         return losses, inter_vars, stats
 

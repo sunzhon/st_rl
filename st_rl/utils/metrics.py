@@ -22,19 +22,29 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.math import quat_rotate_inverse, yaw_quat
 from isaaclab.utils.math import euler_xyz_from_quat as get_euler_xyz
 
+from st_rl.env import VecEnv
 from .logger import Logger
 
-class StRlMetricEnvWrapper(StRlVecEnvWrapper):
+class StRlMetricEnvWrapper(VecEnv):
     """Wrapper class to add metrics and logging capabilities to an RL environment."""
 
-    def __init__(self, env, enable_logger=False,log_dir=None):
+    def __init__(self, env: StRlVecEnvWrapper, enable_logger=False,log_dir=None):
         """Initialize the wrapper.
 
         Args:
             env: The environment to wrap.
             enable_logger: Whether to enable logging.
         """
-        super().__init__(env)
+
+        if not isinstance(env, StRlVecEnvWrapper):
+            raise ValueError(
+                "The environment must be inherited from StRlVecEnvWrapper. Environment type:"
+                f" {type(env)}"
+            )
+        # initialize the wrapper
+        self.env = env
+
+
         self.__dict__.update(env.__dict__)
         asset_cfg = SceneEntityCfg("robot")
         asset = self.unwrapped.scene[asset_cfg.name]
@@ -177,3 +187,37 @@ class StRlMetricEnvWrapper(StRlVecEnvWrapper):
             self.logger.reset()
             self.start_log = False
             
+
+
+
+
+    def get_observations(self) -> tuple[torch.Tensor, dict]:
+        """Returns the current observations of the environment."""
+        return self.env.get_observations()
+
+
+    def step(self, actions: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, dict]:
+        return self.env.step(actions)
+
+    def reset(self) -> tuple[torch.Tensor, dict]:  # noqa: D102
+        # reset the environment
+        return self.env.reset()
+
+
+
+    """
+    Properties
+    """
+    @property
+    def unwrapped(self):
+        """Returns the base environment of the wrapper.
+
+        This will be the bare :class:`gymnasium.Env` environment, underneath all layers of wrappers.
+        """
+        return self.env.unwrapped
+
+
+    @property
+    def cfg(self) -> object:
+        """Returns the configuration class instance of the environment."""
+        return self.unwrapped.cfg

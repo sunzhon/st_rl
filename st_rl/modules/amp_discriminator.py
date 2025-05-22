@@ -78,7 +78,7 @@ class AMPDiscriminator(nn.Module):
         grad_pen = self.discriminator_grad_pen * (grad.norm(2, dim=1) - 0).pow(2).mean()
         return grad_pen
 
-    def predict_style_reward(self, state, task_reward, normalizer, device):
+    def predict_style_reward(self, state, task_reward):
         """
         Predict the AMP reward.
 
@@ -91,7 +91,6 @@ class AMPDiscriminator(nn.Module):
         """
         with torch.no_grad():
             self.eval()
-            state = normalizer.normalize_torch(state, device)
             d = self.forward(state)
             # if the amp_obs of policy was discrimated as that from expert obs, then should get high rewards
             style_reward = self.style_reward_coef * torch.clamp(1 - (1/4) * torch.square(d - 1), min=0)
