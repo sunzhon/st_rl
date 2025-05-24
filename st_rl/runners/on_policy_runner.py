@@ -34,8 +34,6 @@ from collections import deque
 import statistics
 
 import torch
-from st_rl.utils.metrics import *
-
 import st_rl
 import st_rl.algorithms as algorithms
 import st_rl.modules as modules
