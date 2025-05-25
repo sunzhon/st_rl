@@ -22,7 +22,7 @@ def GET_PROB_FUNC(option, iteration_scale):
 class TPPO(PPO):
     def __init__(self,
             *args,
-            teacher_ac_path= None, # running device will be handled
+            ppo=None,
             teacher_policy_class_name= "ActorCritic",
             teacher_policy= dict(),
             label_action_with_critic_obs= True, # else, use actor obs
@@ -47,7 +47,7 @@ class TPPO(PPO):
             {student_obs_component_name: teacher_obs_component_name}
             only when both policy are the instance of EncoderActorCriticMixin
         """
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, **ppo, **kwargs)
         self.label_action_with_critic_obs = label_action_with_critic_obs
         self.teacher_act_prob = teacher_act_prob
         self.update_times_scale = update_times_scale
@@ -75,9 +75,9 @@ class TPPO(PPO):
         self.action_labels_from_sample = action_labels_from_sample
 
         # build and load teacher network
-        teacher_actor_critic = getattr(modules, teacher_policy_class_name)(**teacher_policy)
-        if teacher_ac_path is not None:
-            state_dict = torch.load(teacher_ac_path, map_location= "cpu")
+        teacher_actor_critic = getattr(modules, teacher_policy["class_name"])(**teacher_policy)
+        if teacher_policy["teacher_ac_path"] is not None:
+            state_dict = torch.load(teacher_policy["teacher_ac_path"], map_location= "cpu")
             teacher_actor_critic_state_dict = state_dict["model_state_dict"]
             teacher_actor_critic.load_state_dict(teacher_actor_critic_state_dict)
         else:
@@ -127,7 +127,9 @@ class TPPO(PPO):
         return_ = super().process_env_step(rewards, dones, infos)
         self.teacher_actor_critic.reset(dones)
         # resample teacher action mask for those dones env
-        self.use_teacher_act_mask[dones] = torch.rand(dones.sum(), device= self.device) < self.teacher_act_prob(self.current_learning_iteration)
+        index = dones.nonzero(as_tuple=False).squeeze(-1)  # gets indices where done == True
+        self.use_teacher_act_mask[index] = (torch.rand(index.shape[0], device=self.device) < self.teacher_act_prob(self.current_learning_iteration))
+
         return return_
 
     def collect_transition_from_dataset(self, transition, infos):

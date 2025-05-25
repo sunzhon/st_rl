@@ -66,9 +66,17 @@ class OnPolicyRunner:
             self.policy_cfg["num_critic_obs"] = extras["observations"]["critic"].shape[1]
         else:
             self.policy_cfg["num_critic_obs"] = self.policy_cfg["num_obs"]
-
         
-        # get policy
+        if self.alg_cfg["class_name"]=="TPPO":
+            if "teacher" in extras["observations"]:
+                self.alg_cfg["teacher_policy"]["num_actor_obs"] = extras["observations"]["teacher"].shape[1]
+                self.alg_cfg["teacher_policy"]["num_critic_obs"] = extras["observations"]["teacher"].shape[1]
+            else:
+                self.alg_cfg["teacher_policy"]["num_actor_obs"] =  self.policy_cfg["num_critic_obs"]
+                self.alg_cfg["teacher_policy"]["num_critic_obs"] =  self.policy_cfg["num_critic_obs"]
+            self.alg_cfg["teacher_policy"]["num_actions"] =  self.env.num_actions
+
+        # get actor_critic policy
         actor_critic = modules.build_actor_critic(
             self.env,
             self.policy_cfg.pop("class_name"),
