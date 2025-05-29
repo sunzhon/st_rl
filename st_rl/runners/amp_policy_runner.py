@@ -80,8 +80,6 @@ class AmpPolicyRunner(OnPolicyRunner):
         for it in range(start_iter, tot_iter):
             #1) Rollout, inference_mode for data collection
             with torch.inference_mode(self.cfg.get("inference_mode_rollout", True)):
-                # make an ref motion generator, 
-                self.env.reset_ref_motion()
                 # data collection
                 for i in range(self.num_steps_per_env):
                     obs, critic_obs, rewards, dones, infos = self.rollout_step(obs, critic_obs)

@@ -76,6 +76,7 @@ class OnPolicyRunner:
                 self.alg_cfg["teacher_policy"]["num_critic_obs"] =  self.policy_cfg["num_critic_obs"]
             self.alg_cfg["teacher_policy"]["num_actions"] =  self.env.num_actions
 
+
         # get actor_critic policy
         actor_critic = modules.build_actor_critic(
             self.env,
