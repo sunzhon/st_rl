@@ -30,7 +30,7 @@
 
 import time
 import os
-from collections import deque
+from collections import deque, OrderedDict
 import statistics
 
 import torch
@@ -60,21 +60,14 @@ class OnPolicyRunner:
 
         # get obs num and critic_obs num
         obs, extras = self.env.get_observations()
+        self.policy_cfg["num_actor_obs"] = obs.shape[1]
         self.policy_cfg["num_obs"] = obs.shape[1]
 
         if "critic" in extras["observations"]:
             self.policy_cfg["num_critic_obs"] = extras["observations"]["critic"].shape[1]
         else:
             self.policy_cfg["num_critic_obs"] = self.policy_cfg["num_obs"]
-        
-        if self.alg_cfg["class_name"]=="TPPO":
-            if "teacher" in extras["observations"]:
-                self.alg_cfg["teacher_policy"]["num_actor_obs"] = extras["observations"]["teacher"].shape[1]
-                self.alg_cfg["teacher_policy"]["num_critic_obs"] = extras["observations"]["teacher"].shape[1]
-            else:
-                self.alg_cfg["teacher_policy"]["num_actor_obs"] =  self.policy_cfg["num_critic_obs"]
-                self.alg_cfg["teacher_policy"]["num_critic_obs"] =  self.policy_cfg["num_critic_obs"]
-            self.alg_cfg["teacher_policy"]["num_actions"] =  self.env.num_actions
+
 
 
         # get actor_critic policy

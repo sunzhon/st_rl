@@ -9,6 +9,7 @@ import st_rl.modules as modules
 from st_rl.utils import unpad_trajectories
 from st_rl.storage.rollout_storage import ActionLabelRollout, AmpRolloutStorage
 from st_rl.algorithms.ppo import PPO
+from st_rl.algorithms.tppo import TPPO
 from st_rl.datasets.motion_loader import AMPLoader
 from st_rl.modules.normalizer import Normalizer
 from st_rl.modules import EmpiricalNormalization
@@ -32,6 +33,9 @@ class APPOAlgoMixin:
     def __init__(
         self,
         *args,
+        discriminator_loss_coef=1.0,
+        mimic_loss_coef=0.0,
+        amp_obs_dim=None,
         **kwargs,
     ):
         """
@@ -44,13 +48,13 @@ class APPOAlgoMixin:
 
         # The shape of the normalizer is the same as the observation space
         
-        self.discriminator_loss_coef = kwargs["discriminator_loss_coef"]
-        self.mimic_loss_coef = kwargs["mimic_loss_coef"]
+        self.discriminator_loss_coef = discriminator_loss_coef
+        self.mimic_loss_coef = mimic_loss_coef
         # Initialize the AMP normalizer with the observation shape and device
         #self.ref_normalizer = Normalizer(kwargs["amp_obs_dim"])
-        self.ref_obs_normalizer = EmpiricalNormalization(shape=[kwargs["amp_obs_dim"]], until=1.0e8).to(self.device)
+        self.ref_obs_normalizer = EmpiricalNormalization(shape=[amp_obs_dim], until=1.0e8).to(self.device)
         self.ref_obs_normalizer.train()
-        self.ref_motion_normalizer = EmpiricalNormalization(shape=[kwargs["amp_obs_dim"]], until=1.0e8).to(self.device)
+        self.ref_motion_normalizer = EmpiricalNormalization(shape=[amp_obs_dim], until=1.0e8).to(self.device)
         self.ref_motion_normalizer.train()
 
     def init_storage(self, *args, **kwargs):
@@ -136,6 +140,19 @@ class APPOAlgoMixin:
 
 
 class APPO(APPOAlgoMixin, PPO):
+    """
+    APPO (Adversarial Proximal Policy Optimization) class that combines 
+    the functionalities of APPOAlgoMixin and PPO. This class is used for 
+    training policies with adversarial motion priors.
+    
+    Inherits:
+        APPOAlgoMixin: Mixin class providing adversarial training methods.
+        PPO: Proximal Policy Optimization algorithm class.
+    """
+    pass
+
+
+class ATPPO(APPOAlgoMixin, TPPO):
     """
     APPO (Adversarial Proximal Policy Optimization) class that combines 
     the functionalities of APPOAlgoMixin and PPO. This class is used for 

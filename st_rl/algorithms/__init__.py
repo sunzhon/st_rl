@@ -30,6 +30,6 @@
 
 from .ppo import PPO
 from .tppo import TPPO
-from .appo import APPO
+from .appo import APPO, ATPPO
 from .estimator import EstimatorPPO, EstimatorTPPO
 __all__ = ["PPO"]

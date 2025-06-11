@@ -33,7 +33,7 @@ class TPPO(PPO):
             distill_target= "real",
             distill_latent_coef= 1.,
             distill_latent_target= "real",
-            distill_latent_obs_component_mapping= None,
+            distill_latent_obs_component_mapping = None,
             buffer_dilation_ratio= 1.,
             lr_scheduler_class_name= None,
             lr_scheduler= dict(),

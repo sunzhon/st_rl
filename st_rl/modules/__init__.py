@@ -34,7 +34,7 @@ from .actor_critic_recurrent import ActorCriticRecurrent
 from .visual_actor_critic import VisualDeterministicRecurrent, VisualDeterministicAC
 from .actor_critic_mutex import ActorCriticMutex
 from .actor_critic_field_mutex import ActorCriticFieldMutex, ActorCriticClimbMutex
-from .encoder_actor_critic import EncoderActorCriticMixin, EncoderActorCritic, EncoderActorCriticRecurrent
+from .encoder_actor_critic import EncoderActorCriticMixin, EncoderActorCritic, EncoderActorCriticRecurrent, EncoderAmpActorCriticRecurrent
 from .state_estimator import EstimatorMixin, StateAc, StateAcRecurrent
 from .all_mixer import EncoderStateAc, EncoderStateAcRecurrent
 
@@ -60,6 +60,10 @@ def build_actor_critic(env, policy_class_name, policy_cfg):
         policy_cfg["num_critic_obs"] = num_critic_obs
     if not "num_actions" in policy_cfg:
         policy_cfg["num_actions"] = env.num_actions
+    else:
+        if policy_cfg["num_actions"] == None:
+            policy_cfg["num_actions"] = env.num_actions
+
     
     actor_critic: ActorCritic = actor_critic_class(**policy_cfg)
 

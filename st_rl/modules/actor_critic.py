@@ -46,7 +46,7 @@ class ActorCritic(nn.Module):
                         init_noise_std=1.0,
                         mu_activation= None, # If set, the last layer will be added with a special activation layer.
                         obs_segments= None,
-                        privileged_obs_segments= None, # No need
+                        critic_obs_segments= None, # No need
                         obs_components=None,
                         critic_obs_components=None,
                         **kwargs):
@@ -56,8 +56,9 @@ class ActorCritic(nn.Module):
 
         # obs_segmnets is a ordered dict that contains the observation components (string) and its shape.
         # We use this to slice the observations into the correct components.
-        if privileged_obs_segments is None:
-            privileged_obs_segments = obs_segments
+        """
+        if critic_obs_segments is None:
+            critic_obs_segments = obs_segments
         if obs_components is None:
             self.obs_components = ["lin_vel", "ang_vel","projected_gravity","commands","dof_pos","dof_vel","last_actions"]
         else:
@@ -66,9 +67,10 @@ class ActorCritic(nn.Module):
             self.critic_obs_components = ["lin_vel", "ang_vel","projected_gravity","commands","dof_pos","dof_vel","last_actions", "height_measurements"]
         else:
             self.critic_obs_components = critic_obs_components
+        """
 
         self.obs_segments = obs_segments
-        self.privileged_obs_segments = privileged_obs_segments
+        self.critic_obs_segments = critic_obs_segments
 
         activation = get_activation(activation)
 

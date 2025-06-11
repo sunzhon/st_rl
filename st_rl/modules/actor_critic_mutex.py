@@ -19,19 +19,19 @@ class ActorCriticMutex(modules.ActorCritic):
             sub_policy_class_name,
             sub_policy_paths,
             obs_segments= None,
-            privileged_obs_segments= None, # No need
+            critic_obs_segments= None, # No need
             env_action_scale = 0.5,
             **kwargs,
         ):
         if kwargs:
             print("ActorCriticMutex.__init__ got unexpected arguments, which will be ignored: " + str([key for key in kwargs.keys()]))
-        if privileged_obs_segments is None:
-            privileged_obs_segments = obs_segments
+        if critic_obs_segments is None:
+            critic_obs_segments = obs_segments
         self.num_actor_obs = num_actor_obs
         self.num_critic_obs = num_critic_obs
         self.num_actions = num_actions
         self.obs_segments = obs_segments
-        self.privileged_obs_segments = privileged_obs_segments
+        self.critic_obs_segments = critic_obs_segments
         self.sub_policy_paths = sub_policy_paths
         nn.Module.__init__(self) # This implementation is incompatible with the default ActorCritic implementation
         if isinstance(env_action_scale, (tuple, list)):
@@ -55,7 +55,7 @@ class ActorCriticMutex(modules.ActorCritic):
                 num_critic_obs,
                 num_actions,
                 obs_segments= obs_segments,
-                privileged_obs_segments= privileged_obs_segments,
+                critic_obs_segments= critic_obs_segments,
                 **policy_kwargs,
             ))
             if self.submodules[-1].is_recurrent: self.is_recurrent = True

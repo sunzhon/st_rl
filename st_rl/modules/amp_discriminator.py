@@ -23,9 +23,6 @@ class AMPDiscriminator(nn.Module):
         """
         super(AMPDiscriminator, self).__init__()
 
-        #self.device = device
-        self.input_dim = input_dim
-
         self.style_reward_coef = style_reward_coef
         self.discriminator_grad_pen = discriminator_grad_pen
         self.task_reward_lerp = task_reward_lerp

@@ -14,11 +14,11 @@ class EncoderActorCriticMixin:
             num_critic_obs,
             num_actions,
             obs_segments= None,
-            privileged_obs_segments= None,
+            critic_obs_segments= None,
             encoder_component_names= [], # allow multiple encoders
             encoder_class_name= "MlpModel", # accept list of names (in the same order as encoder_component_names)
-            encoder_kwargs= dict(), # accept list of kwargs (in the same order as encoder_component_names),
-            encoder_output_size= None,
+            encoder_kwargs= {"hidden_sizes":[125,512,125]}, # accept list of kwargs (in the same order as encoder_component_names),
+            encoder_output_size= 10,
             critic_encoder_component_names= None, # None, "shared", or a list of names (in the same order as encoder_component_names)
             critic_encoder_class_name= None, # accept list of names (in the same order as encoder_component_names)
             critic_encoder_kwargs= None, # accept list of kwargs (in the same order as encoder_component_names),
@@ -30,7 +30,7 @@ class EncoderActorCriticMixin:
         self.num_critic_obs = num_critic_obs
         self.num_actions = num_actions
         self.obs_segments = obs_segments
-        self.privileged_obs_segments = privileged_obs_segments
+        self.critic_obs_segments = critic_obs_segments
         self.encoder_component_names = encoder_component_names
         self.encoder_class_name = encoder_class_name
         self.encoder_kwargs = encoder_kwargs
@@ -38,8 +38,6 @@ class EncoderActorCriticMixin:
         self.critic_encoder_component_names = critic_encoder_component_names
         self.critic_encoder_class_name = critic_encoder_class_name if not critic_encoder_class_name is None else encoder_class_name
         self.critic_encoder_kwargs = critic_encoder_kwargs if not critic_encoder_kwargs is None else encoder_kwargs
-        self.obs_segments = obs_segments
-        self.privileged_obs_segments = privileged_obs_segments
 
         self.prepare_obs_slices()
 
@@ -48,7 +46,7 @@ class EncoderActorCriticMixin:
             num_critic_obs if self.critic_encoder_component_names is None else num_critic_obs - sum([s[0].stop - s[0].start for s in self.critic_encoder_obs_slices]) + len(self.critic_encoder_obs_slices) * self.encoder_output_size,
             num_actions,
             obs_segments= obs_segments,
-            privileged_obs_segments= privileged_obs_segments,
+            critic_obs_segments= critic_obs_segments,
             **kwargs,
         )
 
@@ -80,7 +78,7 @@ class EncoderActorCriticMixin:
             if self.critic_encoder_component_names == "shared":
                 self.critic_encoder_obs_slices = self.encoder_obs_slices
             else:
-                critic_obs_segments = self.obs_segments if self.privileged_obs_segments is None else self.privileged_obs_segments
+                critic_obs_segments = self.obs_segments if self.critic_obs_segments is None else self.critic_obs_segments
                 self.critic_encoder_obs_slices = [get_obs_slice(critic_obs_segments, name) for name in self.critic_encoder_component_names]
                 self.critic_latents_order = [i for i in range(len(self.critic_encoder_obs_slices))]
                 self.critic_latents_order.sort(key= lambda i: self.critic_encoder_obs_slices[i][0].start)
@@ -185,5 +183,10 @@ class EncoderActorCritic(EncoderActorCriticMixin, ActorCritic):
 
 from .actor_critic_recurrent import ActorCriticRecurrent
 class EncoderActorCriticRecurrent(EncoderActorCriticMixin, ActorCriticRecurrent):
+    pass
+
+
+from .amp_discriminator import AmpActorCriticRecurrent
+class EncoderAmpActorCriticRecurrent(EncoderActorCriticMixin, AmpActorCriticRecurrent):
     pass
     

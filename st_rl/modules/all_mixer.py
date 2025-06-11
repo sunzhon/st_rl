@@ -9,5 +9,5 @@ class EncoderStateAc(EstimatorMixin, EncoderActorCriticMixin, ActorCritic):
 
 class EncoderStateAcRecurrent(EstimatorMixin, EncoderActorCriticMixin, ActorCriticRecurrent):
     
-    def load_misaligned_state_dict(self, module, obs_segments, privileged_obs_segments=None):
+    def load_misaligned_state_dict(self, module, obs_segments, critic_obs_segments=None):
         pass
