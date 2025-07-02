@@ -200,8 +200,7 @@ class PPO:
         # KL
         if self.desired_kl != None and self.schedule == 'adaptive':
             with torch.inference_mode():
-                kl = torch.sum(
-                            torch.log(sigma_batch / minibatch.old_sigma + 1.e-5) + (torch.square(minibatch.old_sigma) + torch.square(minibatch.old_mu - mu_batch)) / (2.0 * torch.square(sigma_batch)) - 0.5, axis=-1)
+                kl = torch.sum(torch.log(sigma_batch / minibatch.old_sigma + 1.e-5) + (torch.square(minibatch.old_sigma) + torch.square(minibatch.old_mu - mu_batch)) / (2.0 * torch.square(sigma_batch)) - 0.5, axis=-1)
                 kl_mean = torch.mean(kl)
 
                 if kl_mean > self.desired_kl * 2.0:
