@@ -171,7 +171,7 @@ class OnPolicyRunner:
                     if self.log_dir is not None:
                         # Book keeping
                         if "episode" in infos:
-                            ep_infos.append(infos["episode"])
+                            ep_infos.append(infos["episode"]) # list with self.num_steps_per_env (24)
                         elif "log" in infos:
                             ep_infos.append(infos["log"])
 
@@ -255,13 +255,13 @@ class OnPolicyRunner:
 
         ep_string = f''
         if locs['ep_infos']:
-            for key in locs['ep_infos'][0]: # [0] is episode, [1] is log
+            for key in locs['ep_infos'][0]: # [0] is the first time steps, all keys (e.g., Episode_Reward/**, Episode_Reward/**,..)
                 infotensor = torch.tensor([], device=self.device)
-                for ep_info in locs['ep_infos']:
+                for ep_info in locs['ep_infos']: # loop all self.num_steps_per_env 
                     # handle scalar and zero dimensional tensor infos
                     if key not in ep_info:
                         continue
-                    if not isinstance(ep_info[key], torch.Tensor):
+                    if not isinstance(ep_info[key], torch.Tensor): # transform value of a key to be tensor
                         ep_info[key] = torch.Tensor([ep_info[key]])
                     if len(ep_info[key].shape) == 0:
                         ep_info[key] = ep_info[key].unsqueeze(0)
