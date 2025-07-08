@@ -226,7 +226,7 @@ class OnPolicyRunner:
         return self.metrics_velrmsd, self.metrics_CoT
 
     def evaluation(self):
-        self.metrics_velrmsd = self.env.lin_vel_rmsd.mean()
+        self.metrics_velrmsd = self.env.tracking_error.mean()
         self.metrics_CoT = self.env.CoT.mean()
 
     def rollout_step(self, obs, critic_obs, **kwargs):
