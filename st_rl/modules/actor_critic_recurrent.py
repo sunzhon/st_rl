@@ -63,6 +63,7 @@ class ActorCriticRecurrent(ActorCritic):
                          **kwargs,
                         )
 
+        self.rnn_type = rnn_type
         activation = get_activation(activation)
 
         self.memory_a = Memory(num_actor_obs, type=rnn_type, num_layers=rnn_num_layers, hidden_size=rnn_hidden_size)
