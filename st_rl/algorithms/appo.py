@@ -34,7 +34,7 @@ class APPOAlgoMixin:
         self,
         *args,
         discriminator_loss_coef=1.0,
-        mimic_loss_coef=0.0,
+        bc_loss_coef=0.0,
         amp_obs_dim=None,
         **kwargs,
     ):
@@ -49,7 +49,7 @@ class APPOAlgoMixin:
         # The shape of the normalizer is the same as the observation space
         
         self.discriminator_loss_coef = discriminator_loss_coef
-        self.mimic_loss_coef = mimic_loss_coef
+        self.bc_loss_coef = bc_loss_coef
         # Initialize the AMP normalizer with the observation shape and device
         #self.ref_normalizer = Normalizer(kwargs["amp_obs_dim"])
         self.ref_obs_normalizer = EmpiricalNormalization(shape=[amp_obs_dim], until=1.0e8).to(self.device)
@@ -109,14 +109,14 @@ class APPOAlgoMixin:
                 ).mean()
                 losses["dagger_loss"] = dagger_loss
 
-        if hasattr(self, "mimic_loss_coef"):
-            if self.mimic_loss_coef != 0:
+        if hasattr(self, "bc_loss_coef"):
+            if self.bc_loss_coef != 0:
                 policy_state = minibatch.ref_obs
                 expert_state = minibatch.ref_motion
-                mimic_loss = torch.norm(
+                bc_loss = torch.norm(
                     policy_state - expert_state, dim=-1
                 ).mean()
-                losses["mimic_loss"] = mimic_loss
+                losses["bc_loss"] = bc_loss
 
         # Discriminator loss.
         if hasattr(self.actor_critic, "discriminator"):
