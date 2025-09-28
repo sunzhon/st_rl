@@ -93,6 +93,9 @@ class APPOAlgoMixin:
         style_reward, task_reward, rewards = self.actor_critic.discriminator.predict_style_reward(ref_obs, rewards)
         infos["log"]["Episode_Reward/style_reward"] = style_reward.mean().item()
         infos["log"]["Episode_Reward/task_reward"] = task_reward.mean().item()
+        ref_reward, _, _ = self.actor_critic.discriminator.predict_style_reward(ref_motion, rewards)
+        infos["log"]["Episode_Reward/ref_reward"] = ref_reward.mean().item()
+        infos["log"]["Episode_Reward/reward"] = rewards.mean().item()
 
         return_ = super().process_env_step(rewards, dones, infos)
 
